@@ -41,7 +41,10 @@ function say(e) {
   if (m.includes("TOO_SOON")) return "لسه مسجّل دخول من لحظة. استنى دقيقة.";
   if (m.includes("ALREADY_DONE")) return "إنت مسجّل دخول وانصراف النهارده خلاص.";
   if (m.includes("OWNER_ONLY")) return "التغيير ده لصاحب المطعم بس.";
-  if (m.includes("Invalid login")) return "رقم التليفون أو كلمة السر غلط.";
+  if (m.includes("Invalid login")) return "البيانات دي مش متسجلة أو كلمة السر غلط. لو دي أول مرة ليك، دوس «حساب جديد» فوق واعمل حساب الأول.";
+  if (m.includes("Email not confirmed")) return "الحساب محتاج تأكيد إيميل. اقفل خاصية Confirm email من إعدادات Supabase.";
+  if (m.includes("Database error")) return "قاعدة البيانات رفضت الحساب الجديد. اتأكد إن ملف database.sql اتشغّل كله.";
+  if (m.includes("rate limit") || m.includes("Too many")) return "محاولات كتير ورا بعض. استنى دقيقة وجرّب تاني.";
   if (m.includes("already registered")) return "الرقم ده متسجل قبل كده. ادخل بكلمة السر.";
   if (m.includes("row-level security") || m.includes("permission denied")) return "مش مسموح لك بالعملية دي.";
   if (m.includes("Failed to fetch") || m.includes("NetworkError")) return "مفيش اتصال بالإنترنت. جرّب تاني.";
@@ -105,14 +108,14 @@ function vSetupNeeded() {
 function vAuth() {
   const up = S.authMode === "up";
   return `<form class="card stack auth" id="auth" novalidate>
+    <div class="tabs"><button type="button" data-act="auth-in" aria-pressed="${!up}">دخول</button><button type="button" data-act="auth-up" aria-pressed="${up}">حساب جديد</button></div>
     <h1>${up ? "حساب جديد" : "تسجيل الدخول"}</h1>
     ${up ? `<label for="a-name">الاسم بالكامل<input id="a-name" name="name" autocomplete="name"></label>` : ""}
-    <label for="a-id">رقم التليفون<input id="a-id" name="id" inputmode="tel" dir="ltr" autocomplete="username" placeholder="01xxxxxxxxx"></label>
+    <label for="a-id">رقم التليفون أو الإيميل<input id="a-id" name="id" dir="ltr" autocomplete="username" placeholder="01xxxxxxxxx"></label>
     <label for="a-pw">كلمة السر${up ? " (6 حروف أو أرقام على الأقل)" : ""}<input id="a-pw" name="pw" type="password" dir="ltr" autocomplete="${up ? "new-password" : "current-password"}"></label>
     <div class="err" id="a-err" role="alert"></div>
-    <button class="btn" type="submit" ${S.busy ? "disabled" : ""}>${up ? "اعمل الحساب" : "ادخل"}</button>
-    <button class="btn ghost" type="button" data-act="auth-mode">${up ? "عندي حساب. تسجيل الدخول" : "موظف جديد؟ اعمل حساب"}</button>
-    <p class="note">${up ? "بعد ما تعمل الحساب، الإدارة لازم توافق عليه قبل ما تقدر تسجّل حضور." : "ادخل بنفس رقم التليفون وكلمة السر اللي سجّلت بيهم."}</p></form>`;
+    <button class="btn" type="submit" id="a-go">${up ? "اعمل الحساب" : "ادخل"}</button>
+    <p class="note">${up ? "أول حساب يتعمل بيبقى صاحب المطعم. أي حساب بعده لازم الإدارة توافق عليه." : "أول مرة تستخدم التطبيق؟ دوس «حساب جديد» فوق. الدخول ده للي عمل حساب قبل كده."}</p></form>`;
 }
 function vPending() {
   return `<div class="card stack auth"><h1>حسابك مستني الموافقة</h1><p>أهلًا ${esc(S.me.full_name)}. حسابك اتعمل، والإدارة هتوافق عليه وبعدها تقدر تسجّل حضورك.</p>
@@ -242,7 +245,8 @@ function paint() {
   if (!sb) { main.innerHTML = vSetupNeeded(); return; }
   if (!S.session) { main.innerHTML = vAuth(); return; }
   ha.innerHTML = (isStaff() ? `<a class="iconbtn" href="#setup" style="text-decoration:none">الإعدادات</a>` : "") + `<button class="iconbtn" data-act="logout">خروج</button>`;
-  if (S.loading || !S.me) { main.innerHTML = `<div class="card empty"><b>جاري التحميل…</b></div>`; return; }
+  if (S.loading) { main.innerHTML = `<div class="card empty"><b>جاري التحميل…</b></div>`; return; }
+  if (!S.me) { main.innerHTML = `<div class="card stack auth"><h1>الحساب مش مكتمل</h1><p>دخلت، بس مفيش ملف موظف مربوط بالحساب ده. ده بيحصل لو الحساب اتعمل قبل تجهيز قاعدة البيانات.</p><div class="row"><button class="btn" data-act="refresh">جرّب تاني</button><button class="btn ghost" data-act="logout">خروج</button></div></div>`; return; }
   $("#who").textContent = ROLES[S.me.role] || "";
   if (S.me.role === "pending" || !S.me.active) { main.innerHTML = S.me.active ? vPending() : `<div class="card stack auth"><h1>الحساب موقوف</h1><p>كلّم الإدارة.</p><div><button class="btn ghost" data-act="logout">خروج</button></div></div>`; return; }
   let v = location.hash.slice(1);
@@ -383,23 +387,23 @@ document.addEventListener("submit", async ev => {
   if (!id.includes("@") && id.replace(/\D/g, "").length < 10) return err("اكتب رقم التليفون كامل.");
   if (pw.length < 6) return err("كلمة السر 6 حروف أو أرقام على الأقل.");
   if (S.authMode === "up" && !name) return err("اكتب اسمك.");
-  S.busy = true;
+  const go = $("#a-go"), label = go.textContent;
+  err(""); go.disabled = true; go.textContent = "لحظة…";
   try {
     if (S.authMode === "up") {
       const { data, error } = await sb.auth.signUp({ email: toEmail(id), password: pw, options: { data: { full_name: name, phone: id.includes("@") ? "" : id.replace(/\D/g, "") } } });
       if (error) throw error;
-      if (!data.session) { S.busy = false; return err("الحساب اتعمل بس محتاج تأكيد إيميل. اقفل خاصية Confirm email من إعدادات Supabase (الخطوة 2)."); }
+      if (!data.session) throw new Error("Email not confirmed");
     } else {
       const { error } = await sb.auth.signInWithPassword({ email: toEmail(id), password: pw });
       if (error) throw error;
     }
-  } catch (e) { err(say(e)); }
-  S.busy = false;
+  } catch (e) { err(say(e)); if ($("#a-go")) { go.disabled = false; go.textContent = label; } }
 });
 document.addEventListener("click", async ev => {
   const b = ev.target.closest("[data-act]"); if (!b) return;
   const a = b.dataset.act, id = b.dataset.id;
-  if (a === "auth-mode") { S.authMode = S.authMode === "up" ? "in" : "up"; return render(); }
+  if (a === "auth-in" || a === "auth-up") { S.authMode = a === "auth-up" ? "up" : "in"; return render(); }
   if (a === "logout") { await sb.auth.signOut(); return; }
   if (a === "refresh") return refresh();
   if (a === "month") return setMonth(shiftMonth(S.month, +b.dataset.d));

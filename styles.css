@@ -133,3 +133,7 @@ nav a{white-space:nowrap;min-width:64px}
 .opts button{border:1px solid var(--line);border-radius:10px;padding:12px 6px;font-weight:700;background:var(--surface)}
 
 nav a{flex:1 0 auto;padding-inline:12px}
+
+[hidden]{display:none !important}
+.err:empty{display:none}
+.err{background:var(--a-bg);color:var(--a-ink);border-radius:10px;padding:10px 12px}
