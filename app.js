@@ -308,7 +308,11 @@ function vMe() {
   <div class="row"><button class="btn ghost small" data-act="payslip" data-id="${esc(S.me.id)}">🧾 قسيمة راتبي (PDF)</button><button class="btn ghost small" data-act="docs" data-id="${esc(S.me.id)}">📁 مستنداتي</button></div>
   <div class="row" style="margin-top:4px"><h2 class="grow">إجازاتي وطلباتي</h2><button class="btn small" data-act="leave-new">+ اطلب إجازة</button></div>
   ${S.leave.length ? `<div class="stack">${S.leave.slice(0, 6).map(l => leaveCard(l, false)).join("")}</div>` : `<div class="card empty">مفيش طلبات لسه. اطلب إجازة من الزرار فوق.</div>`}
-  ${(() => { const mr = S.rota.filter(r => r.user_id === S.me.id && r.work_date >= TODAY).sort((a, b) => a.work_date.localeCompare(b.work_date)).slice(0, 7); return mr.length ? `<h2>شيفتاتك الجاية</h2><div class="card"><div class="row" style="gap:8px;flex-wrap:wrap">${mr.map(r => `<span class="chip ${r.shift === "off" ? "O" : r.shift}">${esc(r.work_date.slice(5))} · ${r.shift === "off" ? "إجازة" : SHIFT[r.shift]}</span>`).join("")}</div></div>` : ""; })()}
+  ${(() => {
+    const ms = S.rota.filter(r => r.user_id === S.me.id).sort((a, b) => a.work_date.localeCompare(b.work_date));
+    const row = r => { const d = new Date(r.work_date + "T00:00:00"); const today = r.work_date === TODAY; return `<div class="row" style="padding:8px 0;border-bottom:1px solid var(--line)${today ? ";color:var(--accent);font-weight:700" : ""}"><span class="grow">${WD[d.getDay()]} ${esc(r.work_date.slice(8))}/${esc(r.work_date.slice(5, 7))}${today ? " · النهارده" : ""}</span><span class="chip ${r.shift === "off" ? "O" : r.shift}">${r.shift === "off" ? "إجازة" : SHIFT[r.shift]}</span></div>`; };
+    return `<h2>جدول شيفتاتك · ${monthLabel(S.month)}</h2>${ms.length ? `<div class="card">${ms.map(row).join("")}</div>` : `<div class="card empty">لسه مفيش شيفتات متحددة ليك الشهر ده.<div class="note" style="margin-top:4px">الإدارة بتحدد الشيفتات من قسم «الشيفتات».</div></div>`}`;
+  })()}
   <h2>حضوري في ${monthLabel(S.month)}</h2>
   ${mine.length ? `<div class="scroll"><table><thead><tr><th>اليوم</th><th>الحالة</th><th>دخول</th><th>انصراف</th><th>ساعات</th><th>تأخير</th></tr></thead><tbody>${mine.map(r => `<tr><td class="num">${esc(r.work_date.slice(8))}</td><td>${r.status === "present" ? `<span class="chip ${r.shift || "M"}">${SHIFT[r.shift] || "حاضر"}</span>` : r.status === "off" ? `<span class="chip O">إجازة</span>` : `<span class="chip A">غياب</span>`}</td><td class="num">${clock(r.check_in)}</td><td class="num">${clock(r.check_out)}</td><td class="num">${money(rowHours(r))}</td><td class="num">${r.late_min > 0 ? r.late_min + " د" : "—"}</td></tr>`).join("")}</tbody></table></div>` : `<div class="card empty">مفيش حضور متسجل في الشهر ده.</div>`}
   ${myAdv.length ? `<h2>سلفي</h2><div class="scroll"><table><thead><tr><th>التاريخ</th><th>السلفة</th><th>المسدد</th><th>المتبقي</th></tr></thead><tbody>${myAdv.map(a => `<tr><td class="num">${esc(a.entry_date)}</td><td class="num">${money(a.amount)}</td><td class="num">${money(a.repaid)}</td><td class="num money">${money(a.amount - a.repaid)}</td></tr>`).join("")}</tbody></table></div>` : ""}
@@ -871,7 +875,7 @@ document.addEventListener("click", async ev => {
     navigator.serviceWorker.getRegistrations().then(rs => {
       rs.forEach(r => { if (r.active && /\/sw\.js/.test(r.active.scriptURL)) r.unregister(); });
     }).catch(() => {});
-    navigator.serviceWorker.register("sw-push.js?v=14").then(() => refreshPushState()).catch(() => {});
+    navigator.serviceWorker.register("sw-push.js?v=15").then(() => refreshPushState()).catch(() => {});
   }
   if (!CFG.SUPABASE_URL || !CFG.SUPABASE_KEY || !window.supabase) { render(); return; }
   sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_KEY);
