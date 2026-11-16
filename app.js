@@ -111,7 +111,7 @@ function vAuth() {
     <div class="tabs"><button type="button" data-act="auth-in" aria-pressed="${!up}">دخول</button><button type="button" data-act="auth-up" aria-pressed="${up}">حساب جديد</button></div>
     <h1>${up ? "حساب جديد" : "تسجيل الدخول"}</h1>
     ${up ? `<label for="a-name">الاسم بالكامل<input id="a-name" name="name" autocomplete="name"></label>` : ""}
-    <label for="a-id">رقم التليفون أو الإيميل<input id="a-id" name="id" dir="ltr" autocomplete="username" placeholder="01xxxxxxxxx"></label>
+    <label for="a-id">رقم التليفون<input id="a-id" name="id" dir="ltr" inputmode="tel" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" placeholder="01xxxxxxxxx"></label>
     <label for="a-pw">كلمة السر${up ? " (6 حروف أو أرقام على الأقل)" : ""}<input id="a-pw" name="pw" type="password" dir="ltr" autocomplete="${up ? "new-password" : "current-password"}"></label>
     <div class="err" id="a-err" role="alert"></div>
     <button class="btn" type="submit" id="a-go">${up ? "اعمل الحساب" : "ادخل"}</button>
