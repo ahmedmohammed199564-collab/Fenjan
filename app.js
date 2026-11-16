@@ -140,15 +140,22 @@ function vSetupNeeded() {
 }
 function vAuth() {
   const up = S.authMode === "up";
-  return `<div class="card stack auth" id="auth">
-    <div class="tabs"><button type="button" data-act="auth-in" aria-pressed="${!up}">دخول</button><button type="button" data-act="auth-up" aria-pressed="${up}">حساب جديد</button></div>
+  return `<div class="authwrap">
+  <div class="hero">
+    <span class="hlogo" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 8h1a3 3 0 0 1 0 6h-1"/><path d="M3 8h14v5a5 5 0 0 1-5 5H8a5 5 0 0 1-5-5V8Z"/><path d="M7 2.5c-.4.6-.4 1.4 0 2M11 2.5c-.4.6-.4 1.4 0 2"/><path d="M3 21h16"/></svg></span>
+    <div class="hname">فنجان</div>
+    <div class="htag">نظام شؤون الموظفين</div>
+  </div>
+  <div class="card stack auth" id="auth">
+    <div class="tabs seg2"><button type="button" data-act="auth-in" aria-pressed="${!up}">دخول</button><button type="button" data-act="auth-up" aria-pressed="${up}">حساب جديد</button></div>
     <h1>${up ? "حساب جديد" : "تسجيل الدخول"}</h1>
     ${up ? `<label for="a-name">الاسم بالكامل<input id="a-name" autocomplete="name"></label>` : ""}
     <label for="a-id">رقم التليفون<input id="a-id" dir="ltr" inputmode="tel" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" placeholder="01xxxxxxxxx"></label>
     <label for="a-pw">كلمة السر${up ? " (6 حروف أو أرقام على الأقل)" : ""}<input id="a-pw" type="password" dir="ltr" autocomplete="${up ? "new-password" : "current-password"}" data-act="auth-enter"></label>
     <div class="err" id="a-err" role="alert"></div>
     <button class="btn" type="button" data-act="auth-go" id="a-go">${up ? "اعمل الحساب" : "ادخل"}</button>
-    <p class="note">${up ? "أول حساب يتعمل بيبقى صاحب المطعم. أي حساب بعده لازم الإدارة توافق عليه." : "أول مرة تستخدم التطبيق؟ دوس «حساب جديد» فوق. الدخول ده للي عمل حساب قبل كده."}</p></div>`;
+    <p class="note">${up ? "أول حساب يتعمل بيبقى صاحب المطعم. أي حساب بعده لازم الإدارة توافق عليه." : "أول مرة تستخدم التطبيق؟ دوس «حساب جديد» فوق. الدخول ده للي عمل حساب قبل كده."}</p></div>
+  </div>`;
 }
 function vPending() {
   return `<div class="card stack auth"><h1>حسابك مستني الموافقة</h1><p>أهلًا ${esc(S.me.full_name)}. حسابك اتعمل، والإدارة هتوافق عليه وبعدها تقدر تسجّل حضورك.</p>
@@ -506,7 +513,7 @@ document.addEventListener("click", async ev => {
     navigator.serviceWorker.getRegistrations().then(rs => {
       rs.forEach(r => { if (r.active && /\/sw\.js/.test(r.active.scriptURL)) r.unregister(); });
     }).catch(() => {});
-    navigator.serviceWorker.register("sw-push.js?v=7").then(() => refreshPushState()).catch(() => {});
+    navigator.serviceWorker.register("sw-push.js?v=8").then(() => refreshPushState()).catch(() => {});
   }
   if (!CFG.SUPABASE_URL || !CFG.SUPABASE_KEY || !window.supabase) { render(); return; }
   sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_KEY);
