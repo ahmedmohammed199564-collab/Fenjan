@@ -184,6 +184,58 @@ nav a[aria-current="page"] .ni svg{stroke-width:2.4}
 input[type=range]{accent-color:var(--accent);padding:0;background:transparent;border:0}
 .dlg{max-height:calc(100vh - 28px);overflow:auto}
 .leaflet-container{font-family:inherit;background:var(--bg)}
+/* avatars */
+.avatar{display:inline-flex;align-items:center;justify-content:center;border-radius:50%;background:var(--av);color:#fff;font-weight:700;flex:none;box-shadow:inset 0 0 0 2px rgba(255,255,255,.18),0 2px 6px rgba(42,31,22,.12);line-height:1}
+/* skeleton loaders */
+.sk{background:linear-gradient(90deg,var(--line),color-mix(in srgb,var(--line) 35%,var(--surface)),var(--line));background-size:200% 100%;animation:sh 1.3s linear infinite;border-radius:8px;height:14px}
+.sk-av{width:42px;height:42px;border-radius:50%;flex:none}
+.skrow{display:flex;align-items:center;gap:12px}
+@keyframes sh{0%{background-position:200% 0}100%{background-position:-200% 0}}
+@media (prefers-reduced-motion:reduce){.sk{animation:none}}
+/* dashboard */
+.donut{width:104px;height:104px;flex:none}
+.donut .dn-n{font-family:var(--display);font-size:20px;font-weight:700;fill:var(--ink)}
+.donut .dn-l{font-size:11px;fill:var(--muted);font-weight:600}
+.barchart{display:flex;align-items:flex-end;gap:2px;height:96px;padding:6px 2px;background:linear-gradient(0deg,color-mix(in srgb,var(--accent) 4%,transparent),transparent);border-radius:10px}
+.barwrap{flex:1;height:100%;display:flex;align-items:flex-end}
+.bar{width:100%;min-height:2px;background:linear-gradient(180deg,var(--accent),color-mix(in srgb,var(--accent) 70%,#000));border-radius:3px 3px 0 0;transition:height .3s}
+.bar.fut{background:var(--line)}
+.lrow{padding:7px 0;border-bottom:1px solid var(--line)}
+.lrow:last-child{border-bottom:0}
+.ltrack{height:7px;border-radius:999px;background:var(--line);margin-top:7px;overflow:hidden}
+.lfill{height:100%;border-radius:999px;background:linear-gradient(90deg,var(--a-ink),color-mix(in srgb,var(--a-ink) 70%,#000))}
+/* payslip / print (fixed light colors so it reads on paper/PDF) */
+#printroot{display:none}
+#printroot.on{display:block;position:fixed;inset:0;z-index:100;background:rgba(0,0,0,.55);overflow:auto;padding:16px}
+.paysheet{max-width:640px;margin:0 auto;background:#fff;color:#1a1a1a;border-radius:14px;padding:26px;font-size:15px}
+.pshead{display:flex;align-items:center;gap:12px;border-bottom:2px solid #8A4E24;padding-bottom:14px}
+.pslogo{width:48px;height:48px;border-radius:12px;background:#8A4E24;color:#fff;display:flex;align-items:center;justify-content:center}
+.pslogo svg{width:28px;height:28px}
+.psname{font-family:var(--display);font-size:24px;font-weight:700;color:#8A4E24;line-height:1}
+.pssub{font-size:13px;color:#666}
+.psmonth{margin-inline-start:auto;font-weight:700;background:#F3E6D6;color:#8A4E24;padding:6px 12px;border-radius:999px;font-size:14px}
+.psmeta{display:flex;flex-wrap:wrap;gap:14px;margin:16px 0}
+.psmeta div{display:flex;flex-direction:column}
+.psmeta span{font-size:12px;color:#777}
+.psmeta b{font-size:15px}
+.pstable{width:100%;border-collapse:collapse;margin:10px 0}
+.pstable td,.pstable th{padding:9px 6px;border-bottom:1px solid #eee;text-align:start}
+.pstable .pv{text-align:end;font-weight:700;white-space:nowrap}
+.pstable .neg{color:#B42318}
+.pstable.ded td{color:#333}
+.pstable.grid2 th{font-size:12px;color:#777;border-bottom:2px solid #ddd}
+.pstable.grid2 .num{text-align:center}
+.pstable.grid2 tfoot td{border-top:2px solid #ddd;font-weight:700}
+.psnet{display:flex;align-items:center;justify-content:space-between;background:#F3E6D6;border-radius:12px;padding:14px 18px;margin-top:12px}
+.psnet span{font-weight:700;color:#5a3418}
+.psnet b{font-size:22px;color:#8A4E24}
+.psfoot{font-size:12px;color:#888;margin-top:16px;line-height:1.7}
+@media print{
+  .app,#dlg,#toast,nav,header{display:none !important}
+  #printroot.on{position:static;background:#fff;padding:0;z-index:auto}
+  #printroot .noprint{display:none !important}
+  .paysheet{max-width:none;margin:0;border-radius:0;padding:0;box-shadow:none}
+}
 
 [hidden]{display:none !important}
 .err:empty{display:none}
