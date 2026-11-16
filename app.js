@@ -14,7 +14,7 @@ const SHIFT = { M: "صباحي", E: "مسائي" };
 const pad = n => String(n).padStart(2, "0");
 const cairoDate = (d = new Date()) => new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
 const TODAY = cairoDate();
-const S = { session: null, me: null, settings: null, people: [], att: [], adv: [], pen: [], month: TODAY.slice(0, 7), view: "", tab: "adv", authMode: "in", busy: false, loading: true, punchMsg: "" };
+const S = { session: null, me: null, settings: null, people: [], att: [], adv: [], pen: [], ann: [], month: TODAY.slice(0, 7), view: "", tab: "adv", authMode: "in", busy: false, loading: true, punchMsg: "" };
 let sb = null;
 
 const money = n => (Math.round((+n || 0) * 100) / 100).toLocaleString("en-US");
@@ -67,13 +67,14 @@ async function loadMonth() {
   const from = S.month + "-01", to = S.month + "-" + pad(daysIn(S.month));
   const mine = !isStaff();
   const scope = x => mine ? x.eq("user_id", S.me.id) : x;
-  const [people, att, adv, pen] = await Promise.all([
+  const [people, att, adv, pen, ann] = await Promise.all([
     isStaff() ? q(sb.from("profiles").select("*").order("full_name")) : Promise.resolve([S.me]),
     q(scope(sb.from("attendance").select("*").gte("work_date", from).lte("work_date", to))),
     q(scope(sb.from("advances").select("*").gte("entry_date", from).lte("entry_date", to)).order("entry_date", { ascending: false })),
     q(scope(sb.from("penalties").select("*").gte("entry_date", from).lte("entry_date", to)).order("entry_date", { ascending: false })),
+    q(sb.from("announcements").select("*").order("created_at", { ascending: false }).limit(50)).catch(() => []),
   ]);
-  Object.assign(S, { people, att, adv, pen });
+  Object.assign(S, { people, att, adv, pen, ann: ann || [] });
 }
 async function refresh(silent) {
   if (!S.session) return;
@@ -132,6 +133,18 @@ function myToday() {
   const today = S.att.find(r => r.user_id === S.me.id && r.work_date === TODAY);
   return { open, today };
 }
+function annCards(canDelete) {
+  if (!S.ann.length) return canDelete ? "" : "";
+  return `<div class="stack">${S.ann.map(a => `<div class="card" style="border-inline-start:4px solid var(--accent)"><div class="row"><div class="grow" style="white-space:pre-wrap">${esc(a.body)}</div>${canDelete ? `<button class="btn ghost small" data-act="ann-del" data-id="${a.id}">حذف</button>` : ""}</div><div class="note" style="margin-top:6px">${esc(a.author || "الإدارة")} · ${esc(String(a.created_at || "").slice(0, 10))}</div></div>`).join("")}</div>`;
+}
+function vAnnounce() {
+  return `<h1>إعلان لكل الموظفين</h1>
+  <div class="card stack"><label for="ann-body">اكتب الإعلان<textarea id="ann-body" rows="4" placeholder="مثال: اجتماع الموظفين بكرة الساعة ١٢ الظهر."></textarea></label>
+    <div class="err" id="ann-err" role="alert"></div>
+    <div><button class="btn" data-act="ann-post">ابعت لكل الموظفين</button></div>
+    <p class="note">الإعلان هيظهر لكل موظف في شاشته أول ما يفتح التطبيق.</p></div>
+  ${S.ann.length ? `<h2>الإعلانات المتبعتة</h2>${annCards(true)}` : `<div class="card empty">لسه مفيش إعلانات.</div>`}`;
+}
 function vMe() {
   const { open, today } = myToday();
   const c = tally(S.me.id);
@@ -140,6 +153,7 @@ function vMe() {
   const mine = S.att.filter(r => r.user_id === S.me.id).sort((a, b) => b.work_date.localeCompare(a.work_date));
   const myAdv = S.adv.filter(a => a.user_id === S.me.id), myPen = S.pen.filter(x => x.user_id === S.me.id);
   return `<div class="row"><h1 class="grow">أهلًا ${esc(S.me.full_name)}</h1>${monthBar()}</div>
+  ${S.ann.length ? `<h2>إعلانات الإدارة</h2>${annCards(false)}` : ""}
   ${S.month === TODAY.slice(0, 7) ? `<div class="card punch">
     <div class="state">${state}</div>
     ${done ? "" : `<button class="big ${open ? "out" : ""}" data-act="punch" ${S.busy ? "disabled" : ""}>${S.busy ? "لحظة…" : open ? "سجّل انصراف" : "سجّل دخول"}</button>`}
@@ -241,8 +255,8 @@ function vSetup() {
     <div><button class="btn" data-act="setup-edit">عدّل</button></div></div>`;
 }
 
-const STAFF_NAV = [["today", "اليوم"], ["month", "الشهر"], ["staff", "الموظفين"], ["money", "سلف وجزاءات"], ["payroll", "المرتبات"], ["me", "حضوري"]];
-const VIEWS = { today: vToday, month: vMonth, staff: vStaff, money: vMoney, payroll: vPayroll, setup: vSetup, me: vMe };
+const STAFF_NAV = [["today", "اليوم"], ["month", "الشهر"], ["staff", "الموظفين"], ["money", "سلف وجزاءات"], ["payroll", "المرتبات"], ["announce", "إعلانات"], ["me", "حضوري"]];
+const VIEWS = { today: vToday, month: vMonth, staff: vStaff, money: vMoney, payroll: vPayroll, announce: vAnnounce, setup: vSetup, me: vMe };
 let raf = 0;
 function render() { cancelAnimationFrame(raf); raf = requestAnimationFrame(paint); }
 function paint() {
@@ -427,6 +441,14 @@ document.addEventListener("click", async ev => {
   if (a === "adv-del") return confirmDlg("حذف سلفة", "السلفة دي هتتمسح ومش هتتحسب في كشف المرتبات.", "احذف", () => q(sb.from("advances").delete().eq("id", id)));
   if (a === "pen-del") return confirmDlg("حذف جزاء", "الجزاء ده هيتمسح ومش هيتخصم من المرتب.", "احذف", () => q(sb.from("penalties").delete().eq("id", id)));
   if (a === "setup-edit") return setupDlg();
+  if (a === "ann-post") {
+    const el = $("#ann-body"), body = (el && el.value || "").trim();
+    if (!body) { const e = $("#ann-err"); if (e) e.textContent = "اكتب الإعلان الأول."; return; }
+    try { await q(sb.from("announcements").insert({ body, author: S.me.full_name })); toast("الإعلان اتبعت لكل الموظفين."); await refresh(true); }
+    catch (e) { const el2 = $("#ann-err"); if (el2) el2.textContent = say(e); }
+    return;
+  }
+  if (a === "ann-del") return confirmDlg("حذف إعلان", "الإعلان ده هيتشال من عند كل الموظفين.", "احذف", () => q(sb.from("announcements").delete().eq("id", id)));
   if (a === "copy") { try { await navigator.clipboard.writeText(sheet().map(r => r.join("\t")).join("\n")); toast("الكشف اتنسخ."); } catch (e) { toast("النسخ مش متاح هنا."); } return; }
   if (a === "csv") {
     const csv = "\ufeff" + sheet().map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\r\n");
