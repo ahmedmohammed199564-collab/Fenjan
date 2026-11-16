@@ -148,16 +148,19 @@ function otHoursFor(uid) {
   return Math.round(h * 100) / 100;
 }
 function payroll() {
-  const otRate = +S.settings.ot_rate || 0;
+  const otRate = +S.settings.ot_rate || 0, s = S.settings, ar = s.auto_rules_on;
   return workers().map(p => {
     const c = tally(p.id), salary = +p.salary || 0;
     const adv = S.adv.filter(a => a.user_id === p.id), pen = S.pen.filter(x => x.user_id === p.id), adj = S.adj.filter(x => x.user_id === p.id);
     const advBal = adv.reduce((s, a) => s + (+a.amount || 0) - (+a.repaid || 0), 0), penSum = pen.reduce((s, x) => s + (+x.amount || 0), 0);
     const allow = adj.reduce((s, x) => s + (+x.amount || 0), 0);
     const otHours = otHoursFor(p.id), otPay = Math.round(otHours * otRate * 100) / 100;
-    const absDed = S.settings.absence_deduct ? Math.round(salary / (S.settings.divisor || 30) * c.absent * 100) / 100 : 0;
-    const ded = absDed + advBal + penSum;
-    return { p, c, salary, advBal, penCount: pen.length, penSum, allow, otHours, otPay, absDed, ded, net: salary + otPay + allow - ded };
+    const absDed = s.absence_deduct ? Math.round(salary / (s.divisor || 30) * c.absent * 100) / 100 : 0;
+    const lateFee = ar ? Math.max(0, c.lates - (+s.late_free || 0)) * (+s.late_fee || 0) : 0;
+    const absFee = ar ? c.absent * (+s.absent_fee || 0) : 0;
+    const autoDed = Math.round((lateFee + absFee) * 100) / 100;
+    const ded = absDed + advBal + penSum + autoDed;
+    return { p, c, salary, advBal, penCount: pen.length, penSum, allow, otHours, otPay, absDed, autoDed, lateFee, absFee, ded, net: salary + otPay + allow - ded };
   });
 }
 
@@ -302,7 +305,7 @@ function vMe() {
     ${done ? "" : `<button class="big ${open ? "out" : ""}" data-act="punch" ${S.busy ? "disabled" : ""}>${S.busy ? "لحظة…" : open ? "سجّل انصراف" : "سجّل دخول"}</button>`}
     <div class="note">${S.punchMsg ? esc(S.punchMsg) : "لازم تكون جوه المطعم والموقع (GPS) شغال على موبايلك."}</div></div>` : ""}
   <div class="tiles"><div class="tile"><b class="num">${c.worked}</b><span>أيام شغل</span></div><div class="tile"><b class="num">${money(c.hours)}</b><span>ساعات</span></div><div class="tile O"><b class="num">${c.off}</b><span>إجازة</span></div><div class="tile A"><b class="num">${c.absent}</b><span>غياب</span></div><div class="tile"><b class="num">${c.lates}</b><span>مرات تأخير</span></div></div>
-  <div class="row"><button class="btn ghost small" data-act="payslip" data-id="${esc(S.me.id)}">🧾 قسيمة راتبي (PDF)</button></div>
+  <div class="row"><button class="btn ghost small" data-act="payslip" data-id="${esc(S.me.id)}">🧾 قسيمة راتبي (PDF)</button><button class="btn ghost small" data-act="docs" data-id="${esc(S.me.id)}">📁 مستنداتي</button></div>
   <div class="row" style="margin-top:4px"><h2 class="grow">إجازاتي وطلباتي</h2><button class="btn small" data-act="leave-new">+ اطلب إجازة</button></div>
   ${S.leave.length ? `<div class="stack">${S.leave.slice(0, 6).map(l => leaveCard(l, false)).join("")}</div>` : `<div class="card empty">مفيش طلبات لسه. اطلب إجازة من الزرار فوق.</div>`}
   ${(() => { const mr = S.rota.filter(r => r.user_id === S.me.id && r.work_date >= TODAY).sort((a, b) => a.work_date.localeCompare(b.work_date)).slice(0, 7); return mr.length ? `<h2>شيفتاتك الجاية</h2><div class="card"><div class="row" style="gap:8px;flex-wrap:wrap">${mr.map(r => `<span class="chip ${r.shift === "off" ? "O" : r.shift}">${esc(r.work_date.slice(5))} · ${r.shift === "off" ? "إجازة" : SHIFT[r.shift]}</span>`).join("")}</div></div>` : ""; })()}
@@ -359,7 +362,7 @@ function vStaff() {
   const pend = S.people.filter(p => p.role === "pending"), rest = S.people.filter(p => p.role !== "pending");
   const card = p => `<div class="person"><div class="row">${avatar(p.full_name)}<div class="grow"><div class="pname">${esc(p.full_name || "بدون اسم")} ${p.id === S.me.id ? `<span class="tag">إنت</span>` : ""} ${p.role === "hr" ? `<span class="tag">HR</span>` : p.role === "owner" ? `<span class="tag">المالك</span>` : ""} ${p.active ? "" : `<span class="tag warn">موقوف</span>`}</div><div class="pjob">${esc(p.job || "—")} · <span class="num">${esc(p.phone || "")}</span></div></div>
     ${p.role === "pending" || !can("payroll") ? "" : `<div style="text-align:end"><div class="money num">${money(p.salary)}</div><div class="note">جنيه / شهر</div></div>`}</div>
-    <div class="row">${p.role === "pending" ? (can("approve") ? `<button class="btn small" data-act="emp-edit" data-id="${esc(p.id)}">وافق وكمّل بياناته</button>` : `<span class="note">مستني موافقة صاحب المطعم</span>`) : `<button class="btn ghost small" data-act="emp-edit" data-id="${esc(p.id)}">تعديل</button>`}</div></div>`;
+    <div class="row">${p.role === "pending" ? (can("approve") ? `<button class="btn small" data-act="emp-edit" data-id="${esc(p.id)}">وافق وكمّل بياناته</button>` : `<span class="note">مستني موافقة صاحب المطعم</span>`) : `<button class="btn ghost small" data-act="emp-edit" data-id="${esc(p.id)}">تعديل</button><button class="btn ghost small" data-act="docs" data-id="${esc(p.id)}">مستندات</button>`}</div></div>`;
   return `<div class="row"><h1 class="grow">الموظفين <span class="note num">(${rest.length})</span></h1><button class="iconbtn" data-act="refresh">حدّث</button></div>
   ${pend.length ? `<h2>حسابات مستنية الموافقة</h2><div class="card">${pend.map(card).join("")}</div>` : ""}
   ${rest.length ? `<div class="card">${rest.map(card).join("")}</div>` : ""}
@@ -407,18 +410,18 @@ function vMoney() {
 }
 function vPayroll() {
   const rows = payroll(), ad = S.settings.absence_deduct;
-  const showOT = (+S.settings.ot_rate || 0) > 0, showAllow = S.adj.length > 0;
+  const showOT = (+S.settings.ot_rate || 0) > 0, showAllow = S.adj.length > 0, showAuto = !!S.settings.auto_rules_on;
   const closed = S.closes.some(c => c.month === S.month);
   const head = `<div class="row"><h1 class="grow">كشف المرتبات</h1>${monthBar()}</div>`;
   if (!rows.length) return head + `<div class="card empty"><b>لسه مفيش موظفين</b></div>`;
   const T = rows.reduce((t, r) => ({ salary: t.salary + r.salary, ded: t.ded + r.ded, net: t.net + r.net, hours: t.hours + r.c.hours, absent: t.absent + r.c.absent, ot: t.ot + r.otPay, allow: t.allow + r.allow }), { salary: 0, ded: 0, net: 0, hours: 0, absent: 0, ot: 0, allow: 0 });
-  const cols = 7 + (showOT ? 1 : 0) + (showAllow ? 1 : 0) + (ad ? 1 : 0) + 4;
+  const cols = 7 + (showOT ? 1 : 0) + (showAllow ? 1 : 0) + (ad ? 1 : 0) + (showAuto ? 1 : 0) + 4;
   const closeBar = closed
     ? `<div class="banner"><span class="grow">🔒 الشهر ده مقفول — أرقامه متثبّتة.</span>${can("payroll") ? `<button class="btn small danger" data-act="month-open">افتح الشهر</button>` : ""}</div>`
     : can("payroll") ? `<div class="row"><button class="btn ghost small" data-act="month-close">🔒 اقفل الشهر</button></div>` : "";
   return head + closeBar + `<div class="tiles"><div class="tile"><b class="num">${money(T.net)}</b><span>صافي المرتبات (جنيه)</span></div>${showOT ? `<div class="tile"><b class="num">${money(T.ot)}</b><span>أوفر تايم</span></div>` : ""}${showAllow ? `<div class="tile"><b class="num">${money(T.allow)}</b><span>بدلات وحوافز</span></div>` : ""}<div class="tile"><b class="num">${money(T.ded)}</b><span>إجمالي الخصومات</span></div><div class="tile A"><b class="num">${T.absent}</b><span>أيام غياب</span></div></div>
-  <div class="scroll"><table><thead><tr><th>الموظف</th><th>أيام الشغل</th><th>إجازة</th><th>غياب</th><th>تأخير</th><th>ساعات</th><th>المرتب</th>${showOT ? "<th>أوفر</th>" : ""}${showAllow ? "<th>بدلات</th>" : ""}${ad ? "<th>خصم الغياب</th>" : ""}<th>متبقي السلف</th><th>الجزاءات</th><th>الصافي</th><th></th></tr></thead><tbody>
-  ${rows.map(r => `<tr><td><b>${esc(r.p.full_name)}</b><div class="pjob">${esc(r.p.job || "")}</div></td><td class="num">${r.c.worked}</td><td class="num">${r.c.off}</td><td class="num">${r.c.absent ? `<span class="chip A">${r.c.absent}</span>` : 0}</td><td class="num">${r.c.lates ? `${r.c.lates} (${r.c.lateMin} د)` : 0}</td><td class="num">${money(r.c.hours)}</td><td class="num">${money(r.salary)}</td>${showOT ? `<td class="num pos">${r.otPay ? money(r.otPay) : "—"}</td>` : ""}${showAllow ? `<td class="num pos">${r.allow ? money(r.allow) : "—"}</td>` : ""}${ad ? `<td class="num">${money(r.absDed)}</td>` : ""}<td class="num">${money(r.advBal)}</td><td class="num">${money(r.penSum)}</td><td class="num money ${r.net < 0 ? "neg" : ""}">${money(r.net)}</td><td><button class="btn ghost small" data-act="payslip" data-id="${esc(r.p.id)}">قسيمة</button></td></tr>`).join("")}
+  <div class="scroll"><table><thead><tr><th>الموظف</th><th>أيام الشغل</th><th>إجازة</th><th>غياب</th><th>تأخير</th><th>ساعات</th><th>المرتب</th>${showOT ? "<th>أوفر</th>" : ""}${showAllow ? "<th>بدلات</th>" : ""}${ad ? "<th>خصم الغياب</th>" : ""}<th>متبقي السلف</th><th>الجزاءات</th>${showAuto ? "<th>خصم تلقائي</th>" : ""}<th>الصافي</th><th></th></tr></thead><tbody>
+  ${rows.map(r => `<tr><td><b>${esc(r.p.full_name)}</b><div class="pjob">${esc(r.p.job || "")}</div></td><td class="num">${r.c.worked}</td><td class="num">${r.c.off}</td><td class="num">${r.c.absent ? `<span class="chip A">${r.c.absent}</span>` : 0}</td><td class="num">${r.c.lates ? `${r.c.lates} (${r.c.lateMin} د)` : 0}</td><td class="num">${money(r.c.hours)}</td><td class="num">${money(r.salary)}</td>${showOT ? `<td class="num pos">${r.otPay ? money(r.otPay) : "—"}</td>` : ""}${showAllow ? `<td class="num pos">${r.allow ? money(r.allow) : "—"}</td>` : ""}${ad ? `<td class="num">${money(r.absDed)}</td>` : ""}<td class="num">${money(r.advBal)}</td><td class="num">${money(r.penSum)}</td>${showAuto ? `<td class="num neg">${r.autoDed ? money(r.autoDed) : "—"}</td>` : ""}<td class="num money ${r.net < 0 ? "neg" : ""}">${money(r.net)}</td><td><button class="btn ghost small" data-act="payslip" data-id="${esc(r.p.id)}">قسيمة</button></td></tr>`).join("")}
   </tbody><tfoot><tr><td colspan="${cols - 2}">الإجمالي</td><td class="num money">${money(T.net)}</td><td></td></tr></tfoot></table></div>
   <div class="row"><button class="btn" data-act="csv">نزّل الكشف (Excel)</button><button class="btn ghost" data-act="print-pay">🖨️ اطبع الكشف (PDF)</button><button class="btn ghost" data-act="copy">انسخ الكشف</button></div>
   <p class="note">الصافي = المرتب ${showOT ? "+ أوفر تايم " : ""}${showAllow ? "+ بدلات " : ""}${ad ? "− خصم الغياب " : ""}− المتبقي من سلف الشهر − جزاءات الشهر. ${showOT ? `ساعة الأوفر تايم = ${money(S.settings.ot_rate)} ج. ` : ""}${ad ? `خصم يوم الغياب = المرتب ÷ ${S.settings.divisor}. ` : ""}التأخير بيظهر للعلم ومش بيتخصم لوحده. الضرايب والتأمينات مش محسوبة هنا.</p>`;
@@ -436,6 +439,7 @@ function vSetup() {
     <div class="row"><span class="grow">فترة السماح قبل ما يتحسب تأخير</span><b class="num">${s.grace_min} دقيقة</b></div>
     <div class="row"><span class="grow">خصم أيام الغياب من المرتب</span><b>${s.absence_deduct ? `شغّال (÷ ${s.divisor})` : "مقفول"}</b></div>
     <div class="row"><span class="grow">سعر ساعة الأوفر تايم</span><b>${+s.ot_rate ? `${money(s.ot_rate)} ج` : "مقفول"}</b></div>
+    <div class="row"><span class="grow">الخصم التلقائي (تأخير/غياب)</span><b>${s.auto_rules_on ? `شغّال` : "مقفول"}</b></div>
     <div><button class="btn" data-act="setup-edit">عدّل</button></div></div>
   ${isOwner() ? teamCard() : ""}
   ${isOwner() ? auditCard() : ""}`;
@@ -540,6 +544,39 @@ function empDlg(id) {
   const rs = $("#e-role"), pb = $("#perm-box");
   if (rs && pb) rs.addEventListener("change", () => { pb.hidden = rs.value !== "hr"; });
 }
+function docsDlg(empId) {
+  const p = person(empId), staff = isStaff();
+  openDlg(`<h3>مستندات ${esc(p.full_name || "")}</h3>
+    <div id="docs-list" class="stack"><div class="sk" style="width:60%"></div></div>
+    ${staff ? `<label class="btn ghost" style="text-align:center;cursor:pointer">⬆️ ارفع مستند (صورة أو PDF)<input type="file" id="doc-file" accept="image/*,application/pdf" hidden></label>` : ""}
+    <div class="err" id="docs-err"></div>
+    <div class="row"><button class="btn ghost" type="button" data-close>قفل</button></div>`);
+  async function renderDocs() {
+    const list = $("#docs-list"); if (!list) return;
+    try {
+      const docs = await q(sb.from("employee_docs").select("*").eq("user_id", empId).order("created_at", { ascending: false }));
+      list.innerHTML = docs.length ? docs.map(d => `<div class="row" style="border-bottom:1px solid var(--line);padding:8px 0"><span class="grow">📎 ${esc(d.name || "مستند")}<div class="note num">${esc(String(d.created_at || "").slice(0, 10))}</div></span><button class="btn ghost small" type="button" data-open="${esc(d.path)}">فتح</button>${staff ? `<button class="btn ghost small" type="button" data-del="${esc(d.id)}" data-path="${esc(d.path)}">حذف</button>` : ""}</div>`).join("") : `<p class="note">مفيش مستندات لسه.</p>`;
+      list.querySelectorAll("[data-open]").forEach(b => b.onclick = async () => { try { const { data } = await sb.storage.from("docs").createSignedUrl(b.dataset.open, 3600); if (data && data.signedUrl) window.open(data.signedUrl, "_blank"); else toast("معرفناش نفتح الملف."); } catch (e) { toast(say(e)); } });
+      list.querySelectorAll("[data-del]").forEach(b => b.onclick = async () => { if (!confirm("حذف المستند نهائيًا؟")) return; try { await sb.storage.from("docs").remove([b.dataset.path]); await q(sb.from("employee_docs").delete().eq("id", b.dataset.del)); renderDocs(); } catch (e) { toast(say(e)); } });
+    } catch (e) { list.innerHTML = `<p class="err">${esc(say(e))}</p>`; }
+  }
+  renderDocs();
+  const fi = $("#doc-file");
+  if (fi) fi.onchange = async () => {
+    const f = fi.files[0]; if (!f) return;
+    const er = $("#docs-err"); if (er) er.textContent = "";
+    if (f.size > 10 * 1024 * 1024) { if (er) er.textContent = "الملف كبير (أقصى 10 ميجا)."; fi.value = ""; return; }
+    const path = `${empId}/${Date.now()}_${f.name.replace(/[^\w.\-]+/g, "_")}`;
+    toast("بيترفع…");
+    try {
+      const up = await sb.storage.from("docs").upload(path, f, { upsert: false });
+      if (up.error) throw up.error;
+      await q(sb.from("employee_docs").insert({ user_id: empId, name: f.name.slice(0, 120), path, uploaded_by: S.me.id }));
+      toast("اترفع ✅"); renderDocs();
+    } catch (e) { if (er) er.textContent = say(e); }
+    fi.value = "";
+  };
+}
 function cellDlg(emp, date) {
   const p = person(emp), r = S.att.find(a => a.user_id === emp && a.work_date === date);
   const info = r ? `<div class="card stack" style="padding:10px"><div class="row"><span class="grow">الحالة</span><b>${r.status === "present" ? `حاضر ${SHIFT[r.shift] || ""}` : r.status === "off" ? "إجازة" : "غياب"}${r.manual ? " (يدوي)" : ""}</b></div>
@@ -589,7 +626,10 @@ function setupDlg() {
     <div class="two"><label for="s-ei">دخول المسائي<input id="s-ei" name="e_in" type="time" dir="ltr" value="${hm(s.e_in)}"></label><label for="s-eo">خروج المسائي<input id="s-eo" name="e_out" type="time" dir="ltr" value="${hm(s.e_out)}"></label></div>
     <div class="two"><label for="s-r">مسافة السماح (متر)<input id="s-r" name="radius_m" type="number" min="20" max="5000" dir="ltr" value="${esc(s.radius_m)}"></label><label for="s-g">سماح التأخير (دقيقة)<input id="s-g" name="grace_min" type="number" min="0" max="120" dir="ltr" value="${esc(s.grace_min)}"></label></div>
     <div class="two"><label for="s-a">خصم أيام الغياب<select id="s-a" name="abs"><option value="0" ${s.absence_deduct ? "" : "selected"}>مقفول</option><option value="1" ${s.absence_deduct ? "selected" : ""}>شغّال</option></select></label><label for="s-d">المرتب ÷ كام يوم<input id="s-d" name="divisor" type="number" min="1" max="31" dir="ltr" value="${esc(s.divisor)}"></label></div>
-    <label for="s-ot">سعر ساعة الأوفر تايم (جنيه) — حُطّ 0 لو مقفول<input id="s-ot" name="ot_rate" type="number" min="0" step="any" dir="ltr" value="${esc(s.ot_rate ?? 0)}"></label>${foot("حفظ")}`,
+    <label for="s-ot">سعر ساعة الأوفر تايم (جنيه) — حُطّ 0 لو مقفول<input id="s-ot" name="ot_rate" type="number" min="0" step="any" dir="ltr" value="${esc(s.ot_rate ?? 0)}"></label>
+    <label class="chk" for="s-ar"><input type="checkbox" id="s-ar" name="auto_rules_on" ${s.auto_rules_on ? "checked" : ""}><span>تفعيل الخصم التلقائي للتأخير والغياب</span></label>
+    <div class="two"><label for="s-lfr">مرات تأخير مسموحة/شهر<input id="s-lfr" name="late_free" type="number" min="0" dir="ltr" value="${esc(s.late_free ?? 0)}"></label><label for="s-lfe">خصم كل مرة تأخير زيادة (ج)<input id="s-lfe" name="late_fee" type="number" min="0" step="any" dir="ltr" value="${esc(s.late_fee ?? 0)}"></label></div>
+    <label for="s-afe">غرامة إضافية لكل يوم غياب (ج)<input id="s-afe" name="absent_fee" type="number" min="0" step="any" dir="ltr" value="${esc(s.absent_fee ?? 0)}"></label>${foot("حفظ")}`,
     (fd, err) => {
       const g = k => String(fd.get(k) || "");
       if (!["m_in", "m_out", "e_in", "e_out"].every(k => /^\d\d:\d\d/.test(g(k)))) return err("اكتب كل المواعيد.");
@@ -598,7 +638,7 @@ function setupDlg() {
       if (!(grace >= 0 && grace <= 120)) return err("سماح التأخير من 0 لـ 120 دقيقة.");
       if (!(div >= 1 && div <= 31)) return err("عدد الأيام من 1 لـ 31.");
       if (ot < 0) return err("سعر الأوفر تايم لازم يكون موجب.");
-      run(() => q(sb.from("settings").update({ m_in: g("m_in"), m_out: g("m_out"), e_in: g("e_in"), e_out: g("e_out"), radius_m: radius, grace_min: grace, absence_deduct: g("abs") === "1", divisor: div, ot_rate: ot }).eq("id", 1)), "اتحفظ");
+      run(() => q(sb.from("settings").update({ m_in: g("m_in"), m_out: g("m_out"), e_in: g("e_in"), e_out: g("e_out"), radius_m: radius, grace_min: grace, absence_deduct: g("abs") === "1", divisor: div, ot_rate: ot, auto_rules_on: g("auto_rules_on") === "on", late_free: +g("late_free") || 0, late_fee: +g("late_fee") || 0, absent_fee: +g("absent_fee") || 0 }).eq("id", 1)), "اتحفظ");
     });
 }
 
@@ -711,6 +751,7 @@ function payslipHTML(r) {
   </tbody></table>
   <table class="pstable ded"><tbody>
     ${ad ? line("خصم الغياب", "− " + money(r.absDed) + " ج", "neg") : ""}
+    ${r.autoDed ? line("خصم تلقائي (تأخير/غياب)", "− " + money(r.autoDed) + " ج", "neg") : ""}
     ${line("المتبقي من السلف", "− " + money(r.advBal) + " ج", "neg")}
     ${line("الجزاءات", "− " + money(r.penSum) + " ج", "neg")}
     ${line("إجمالي الخصومات", "− " + money(r.ded) + " ج", "neg")}
@@ -741,8 +782,8 @@ function printPayroll() {
 
 /* ---------- export ---------- */
 function sheet() {
-  const head = ["الموظف", "الوظيفة", "أيام الشغل", "صباحي", "مسائي", "إجازة", "غياب", "مرات التأخير", "دقايق التأخير", "الساعات", "المرتب", "ساعات أوفر تايم", "أوفر تايم", "بدلات وحوافز", "خصم الغياب", "متبقي السلف", "عدد الجزاءات", "خصم الجزاءات", "إجمالي الخصومات", "الصافي"];
-  return [head, ...payroll().map(r => [r.p.full_name, r.p.job || "", r.c.worked, r.c.M, r.c.E, r.c.off, r.c.absent, r.c.lates, r.c.lateMin, Math.round(r.c.hours * 100) / 100, r.salary, r.otHours, r.otPay, r.allow, r.absDed, r.advBal, r.penCount, r.penSum, r.ded, r.net])];
+  const head = ["الموظف", "الوظيفة", "أيام الشغل", "صباحي", "مسائي", "إجازة", "غياب", "مرات التأخير", "دقايق التأخير", "الساعات", "المرتب", "ساعات أوفر تايم", "أوفر تايم", "بدلات وحوافز", "خصم الغياب", "خصم تلقائي", "متبقي السلف", "عدد الجزاءات", "خصم الجزاءات", "إجمالي الخصومات", "الصافي"];
+  return [head, ...payroll().map(r => [r.p.full_name, r.p.job || "", r.c.worked, r.c.M, r.c.E, r.c.off, r.c.absent, r.c.lates, r.c.lateMin, Math.round(r.c.hours * 100) / 100, r.salary, r.otHours, r.otPay, r.allow, r.absDed, r.autoDed, r.advBal, r.penCount, r.penSum, r.ded, r.net])];
 }
 
 /* ---------- actions ---------- */
@@ -780,6 +821,7 @@ document.addEventListener("click", async ev => {
   if (a === "tab") { S.tab = b.dataset.t; return render(); }
   if (a === "punch") return punch();
   if (a === "payslip") { if (!isStaff() && id !== S.me.id) return; return payslip(id || S.me.id); }
+  if (a === "docs") { if (!isStaff() && id !== S.me.id) return; return docsDlg(id || S.me.id); }
   if (a === "leave-new") return leaveDlg();
   if (a === "leave-del") return confirmDlg("حذف الطلب", "الطلب هيتشال.", "احذف", () => q(sb.from("leave_requests").delete().eq("id", id)));
   if (!isStaff()) return;
@@ -829,7 +871,7 @@ document.addEventListener("click", async ev => {
     navigator.serviceWorker.getRegistrations().then(rs => {
       rs.forEach(r => { if (r.active && /\/sw\.js/.test(r.active.scriptURL)) r.unregister(); });
     }).catch(() => {});
-    navigator.serviceWorker.register("sw-push.js?v=12").then(() => refreshPushState()).catch(() => {});
+    navigator.serviceWorker.register("sw-push.js?v=13").then(() => refreshPushState()).catch(() => {});
   }
   if (!CFG.SUPABASE_URL || !CFG.SUPABASE_KEY || !window.supabase) { render(); return; }
   sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_KEY);
