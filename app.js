@@ -54,8 +54,14 @@ async function q(promise) { const { data, error } = await promise; if (error) th
 
 /* ---------- loading ---------- */
 async function loadMe() {
-  S.me = await q(sb.from("profiles").select("*").eq("id", S.session.user.id).maybeSingle());
   S.settings = await q(sb.from("settings").select("*").eq("id", 1).maybeSingle());
+  let me = await q(sb.from("profiles").select("*").eq("id", S.session.user.id).maybeSingle());
+  if (!me) {
+    // No employee profile yet — create one now (covers a missing/not-yet-run DB trigger).
+    try { await sb.rpc("ensure_profile"); me = await q(sb.from("profiles").select("*").eq("id", S.session.user.id).maybeSingle()); }
+    catch (e) { /* ensure_profile not installed; paint() shows a clear message */ }
+  }
+  S.me = me;
 }
 async function loadMonth() {
   const from = S.month + "-01", to = S.month + "-" + pad(daysIn(S.month));
