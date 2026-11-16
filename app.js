@@ -51,6 +51,10 @@ const monthLabel = k => { const [y, m] = k.split("-").map(Number); return `${MON
 const daysIn = k => { const [y, m] = k.split("-").map(Number); return new Date(y, m, 0).getDate(); };
 const shiftMonth = (k, d) => { const [y, m] = k.split("-").map(Number); const x = new Date(y, m - 1 + d, 1); return `${x.getFullYear()}-${pad(x.getMonth() + 1)}`; };
 const isStaff = () => S.me && (S.me.role === "hr" || S.me.role === "owner") && S.me.active;
+const isOwner = () => S.me && S.me.role === "owner" && S.me.active;
+// صلاحية معيّنة: المالك عنده كله، الـ HR حسب اللي اتفعّل له
+const can = p => !!(S.me && (S.me.role === "owner" || (S.me.role === "hr" && S.me.active && S.me["can_" + p])));
+const PERMS = [["payroll", "المرتبات وكشف المرتبات"], ["money", "السلف والجزاءات"], ["approve", "الموافقة على الحسابات الجديدة"], ["settings", "إعدادات المطعم"]];
 const shiftHours = c => { const s = S.settings; if (!s) return 0; const a = c === "M" ? [s.m_in, s.m_out] : [s.e_in, s.e_out]; return ((tmin(a[1]) - tmin(a[0]) + 1440) % 1440) / 60; };
 const rowHours = r => r.status !== "present" ? 0 : (r.check_in && r.check_out) ? Math.max(0, (new Date(r.check_out) - new Date(r.check_in)) / 3600000) : (r.manual && r.shift ? shiftHours(r.shift) : 0);
 const person = id => S.people.find(p => p.id === id) || {};
@@ -245,9 +249,9 @@ function vMonth() {
 }
 function vStaff() {
   const pend = S.people.filter(p => p.role === "pending"), rest = S.people.filter(p => p.role !== "pending");
-  const card = p => `<div class="person"><div class="row"><div class="grow"><div class="pname">${esc(p.full_name || "بدون اسم")} ${p.id === S.me.id ? `<span class="tag">إنت</span>` : ""} ${p.active ? "" : `<span class="tag warn">موقوف</span>`}</div><div class="pjob">${esc(p.job || "—")} · <span class="num">${esc(p.phone || "")}</span> · ${ROLES[p.role]}</div></div>
-    ${p.role === "pending" ? "" : `<div style="text-align:end"><div class="money num">${money(p.salary)}</div><div class="note">جنيه / شهر</div></div>`}</div>
-    <div class="row">${p.role === "pending" ? `<button class="btn small" data-act="emp-edit" data-id="${esc(p.id)}">وافق وكمّل بياناته</button>` : `<button class="btn ghost small" data-act="emp-edit" data-id="${esc(p.id)}">تعديل</button>`}</div></div>`;
+  const card = p => `<div class="person"><div class="row"><div class="grow"><div class="pname">${esc(p.full_name || "بدون اسم")} ${p.id === S.me.id ? `<span class="tag">إنت</span>` : ""} ${p.role === "hr" ? `<span class="tag">HR</span>` : p.role === "owner" ? `<span class="tag">المالك</span>` : ""} ${p.active ? "" : `<span class="tag warn">موقوف</span>`}</div><div class="pjob">${esc(p.job || "—")} · <span class="num">${esc(p.phone || "")}</span></div></div>
+    ${p.role === "pending" || !can("payroll") ? "" : `<div style="text-align:end"><div class="money num">${money(p.salary)}</div><div class="note">جنيه / شهر</div></div>`}</div>
+    <div class="row">${p.role === "pending" ? (can("approve") ? `<button class="btn small" data-act="emp-edit" data-id="${esc(p.id)}">وافق وكمّل بياناته</button>` : `<span class="note">مستني موافقة صاحب المطعم</span>`) : `<button class="btn ghost small" data-act="emp-edit" data-id="${esc(p.id)}">تعديل</button>`}</div></div>`;
   return `<div class="row"><h1 class="grow">الموظفين <span class="note num">(${rest.length})</span></h1><button class="iconbtn" data-act="refresh">حدّث</button></div>
   ${pend.length ? `<h2>حسابات مستنية الموافقة</h2><div class="card">${pend.map(card).join("")}</div>` : ""}
   ${rest.length ? `<div class="card">${rest.map(card).join("")}</div>` : ""}
@@ -287,7 +291,19 @@ function vSetup() {
     <div class="row"><span class="chip E">مسائي</span><span class="num grow">${t12(s.e_in)} ← ${t12(s.e_out)}</span></div>
     <div class="row"><span class="grow">فترة السماح قبل ما يتحسب تأخير</span><b class="num">${s.grace_min} دقيقة</b></div>
     <div class="row"><span class="grow">خصم أيام الغياب من المرتب</span><b>${s.absence_deduct ? `شغّال (÷ ${s.divisor})` : "مقفول"}</b></div>
-    <div><button class="btn" data-act="setup-edit">عدّل</button></div></div>`;
+    <div><button class="btn" data-act="setup-edit">عدّل</button></div></div>
+  ${isOwner() ? teamCard() : ""}`;
+}
+function teamCard() {
+  const mem = S.people.filter(p => p.role !== "pending").sort((a, b) => (a.role === "owner" ? -1 : b.role === "owner" ? 1 : 0));
+  const permTags = p => p.role === "owner" ? `<span class="tag">كل الصلاحيات</span>`
+    : p.role === "hr" ? (PERMS.filter(([k]) => p["can_" + k]).map(([, l]) => `<span class="tag">${l}</span>`).join(" ") || `<span class="tag warn">مفيش صلاحيات لسه</span>`)
+    : `<span class="note">موظف</span>`;
+  const row = p => `<div class="person"><div class="row"><div class="grow"><div class="pname">${esc(p.full_name || "—")} <span class="tag">${ROLES[p.role]}</span></div><div class="row" style="gap:6px;margin-top:6px">${permTags(p)}</div></div>
+    ${p.id === S.me.id ? `<span class="note">إنت</span>` : `<button class="btn ghost small" data-act="emp-edit" data-id="${esc(p.id)}">إدارة الصلاحيات</button>`}</div></div>`;
+  return `<div class="card stack"><h2>الفريق والصلاحيات</h2>
+    <p class="note" style="margin:0">عيّن مين HR، وحدد كل HR يقدر يعمل إيه. صاحب المطعم بس هو اللي يتحكم في ده.</p>
+    ${mem.map(row).join("")}</div>`;
 }
 
 const STAFF_NAV = [["today", "اليوم"], ["month", "الشهر"], ["staff", "الموظفين"], ["money", "سلف وجزاءات"], ["payroll", "المرتبات"], ["announce", "إعلانات"], ["me", "حضوري"]];
@@ -309,15 +325,17 @@ function paint() {
   nav.hidden = true; ha.innerHTML = "";
   if (!sb) { main.innerHTML = vSetupNeeded(); return; }
   if (!S.session) { main.innerHTML = vAuth(); return; }
-  ha.innerHTML = (isStaff() ? `<a class="iconbtn" href="#setup" style="text-decoration:none">الإعدادات</a>` : "") + `<button class="iconbtn" data-act="logout">خروج</button>`;
+  ha.innerHTML = (can("settings") || isOwner() ? `<a class="iconbtn" href="#setup" style="text-decoration:none">الإعدادات</a>` : "") + `<button class="iconbtn" data-act="logout">خروج</button>`;
   if (S.loading) { main.innerHTML = `<div class="card empty"><b>جاري التحميل…</b></div>`; return; }
   if (!S.me) { main.innerHTML = `<div class="card stack auth"><h1>الحساب مش مكتمل</h1><p>دخلت، بس مفيش ملف موظف مربوط بالحساب ده. ده بيحصل لو الحساب اتعمل قبل تجهيز قاعدة البيانات.</p><div class="row"><button class="btn" data-act="refresh">جرّب تاني</button><button class="btn ghost" data-act="logout">خروج</button></div></div>`; return; }
   $("#who").textContent = ROLES[S.me.role] || "";
   if (S.me.role === "pending" || !S.me.active) { main.innerHTML = S.me.active ? vPending() : `<div class="card stack auth"><h1>الحساب موقوف</h1><p>كلّم الإدارة.</p><div><button class="btn ghost" data-act="logout">خروج</button></div></div>`; return; }
   let v = location.hash.slice(1);
-  if (!isStaff()) v = "me"; else if (!VIEWS[v]) v = "today";
+  const navKeys = STAFF_NAV.map(x => x[0]).filter(k => (k !== "money" || can("money")) && (k !== "payroll" || can("payroll")));
+  const allowed = v === "setup" ? (can("settings") || isOwner()) : navKeys.includes(v);
+  if (!isStaff()) v = "me"; else if (!VIEWS[v] || !allowed) v = "today";
   S.view = v;
-  if (isStaff()) { nav.hidden = false; nav.innerHTML = STAFF_NAV.map(([k, l]) => `<a href="#${k}" ${k === v ? `aria-current="page"` : ""}><span class="ni">${ICONS[k] || ""}</span><span class="nl">${l}</span></a>`).join(""); }
+  if (isStaff()) { nav.hidden = false; nav.innerHTML = STAFF_NAV.filter(([k]) => navKeys.includes(k)).map(([k, l]) => `<a href="#${k}" ${k === v ? `aria-current="page"` : ""}><span class="ni">${ICONS[k] || ""}</span><span class="nl">${l}</span></a>`).join(""); }
   const sc = $(".scroll"), sl = sc ? sc.scrollLeft : null;
   main.innerHTML = VIEWS[v]();
   if (sl !== null && $(".scroll")) $(".scroll").scrollLeft = sl;
@@ -339,24 +357,34 @@ async function run(fn, okMsg) { try { await fn(); dlg.open && dlg.close(); if (o
 function confirmDlg(title, text, label, fn) { openDlg(`<h3>${esc(title)}</h3><p style="margin:0">${esc(text)}</p>${foot(label, "danger")}`, () => run(fn, "اتمسح")); }
 
 function empDlg(id) {
-  const p = person(id), owner = S.me.role === "owner", pend = p.role === "pending";
-  const roleOpts = (owner ? ["employee", "hr", "owner"] : ["employee"]).concat(pend ? [] : []).map(r => `<option value="${r}" ${(pend ? "employee" : p.role) === r ? "selected" : ""}>${ROLES[r]}</option>`).join("");
+  const p = person(id), owner = isOwner(), pend = p.role === "pending";
+  const showSalary = can("payroll");
+  const roleOpts = (owner ? ["employee", "hr", "owner"] : ["employee"]).map(r => `<option value="${r}" ${(pend ? "employee" : p.role) === r ? "selected" : ""}>${ROLES[r]}</option>`).join("");
   const lockRole = !owner && (p.role === "hr" || p.role === "owner");
+  const permBox = owner && p.id !== S.me.id ? `<div class="card stack" id="perm-box" style="padding:12px;background:var(--accent-soft);border:0" ${p.role === "hr" ? "" : "hidden"}>
+      <div class="pname" style="font-size:14px">صلاحيات الـ HR</div>
+      ${PERMS.map(([k, l]) => `<label class="chk"><input type="checkbox" name="can_${k}" ${p["can_" + k] ? "checked" : ""}><span>${l}</span></label>`).join("")}
+      <p class="note" style="margin:0">الصلاحيات دي بتشتغل بس لما الدور يكون «HR».</p></div>` : "";
   openDlg(`<h3>${pend ? "موافقة على حساب" : "تعديل موظف"}</h3>
     <label for="e-name">الاسم<input id="e-name" name="full_name" value="${esc(p.full_name)}"></label>
     <div class="two"><label for="e-job">الوظيفة<input id="e-job" name="job" list="jobs" value="${esc(p.job)}"><datalist id="jobs">${JOBS.map(j => `<option value="${j}">`).join("")}</datalist></label>
-    <label for="e-salary">المرتب الشهري<input id="e-salary" name="salary" type="number" min="0" step="any" inputmode="decimal" dir="ltr" value="${esc(p.salary)}"></label></div>
+    ${showSalary ? `<label for="e-salary">المرتب الشهري<input id="e-salary" name="salary" type="number" min="0" step="any" inputmode="decimal" dir="ltr" value="${esc(p.salary)}"></label>` : `<div></div>`}</div>
     <div class="two"><label for="e-role">الصلاحية<select id="e-role" name="role" ${lockRole ? "disabled" : ""}>${lockRole ? `<option>${ROLES[p.role]}</option>` : roleOpts}</select></label>
     <label for="e-active">الحالة<select id="e-active" name="active"><option value="1" ${p.active ? "selected" : ""}>شغّال</option><option value="0" ${p.active ? "" : "selected"}>موقوف</option></select></label></div>
-    <p class="note">HR يشوف ويعدّل كل البيانات ومنها المرتبات. الموظف يشوف بياناته بس.</p>${foot(pend ? "وافق واحفظ" : "حفظ")}`,
+    ${permBox}
+    <p class="note">${owner ? "صاحب المطعم يتحكم في الأدوار والصلاحيات." : showSalary ? "تقدر تعدّل البيانات ومنها المرتب." : "مالكش صلاحية المرتبات، فحقل المرتب مخفي."}</p>${foot(pend ? "وافق واحفظ" : "حفظ")}`,
     (fd, err) => {
-      const name = String(fd.get("full_name") || "").trim(), salary = +fd.get("salary") || 0;
+      const name = String(fd.get("full_name") || "").trim();
       if (!name) return err("اكتب الاسم.");
-      if (salary < 0) return err("المرتب لازم يكون رقم موجب.");
-      const patch = { full_name: name, job: String(fd.get("job") || "").trim(), salary, active: fd.get("active") === "1" };
+      const patch = { full_name: name, job: String(fd.get("job") || "").trim(), active: fd.get("active") === "1" };
+      if (showSalary) { const salary = +fd.get("salary") || 0; if (salary < 0) return err("المرتب لازم يكون رقم موجب."); patch.salary = salary; }
       if (!lockRole) patch.role = fd.get("role") || "employee";
+      if (owner && p.id !== S.me.id) PERMS.forEach(([k]) => patch["can_" + k] = fd.get("can_" + k) === "on");
       run(() => q(sb.from("profiles").update(patch).eq("id", id)), "اتحفظ");
     });
+  // أظهر/أخفي صندوق الصلاحيات حسب الدور المختار
+  const rs = $("#e-role"), pb = $("#perm-box");
+  if (rs && pb) rs.addEventListener("change", () => { pb.hidden = rs.value !== "hr"; });
 }
 function cellDlg(emp, date) {
   const p = person(emp), r = S.att.find(a => a.user_id === emp && a.work_date === date);
@@ -479,6 +507,8 @@ document.addEventListener("click", async ev => {
   if (a === "tab") { S.tab = b.dataset.t; return render(); }
   if (a === "punch") return punch();
   if (!isStaff()) return;
+  if ((a === "set-site" || a === "setup-edit") && !can("settings")) return toast("مالكش صلاحية إعدادات المطعم.");
+  if (/^(adv|pen)-/.test(a) && !can("money")) return toast("مالكش صلاحية السلف والجزاءات.");
   if (a === "set-site") return setSite();
   if (a === "cell") return cellDlg(b.dataset.emp, b.dataset.date);
   if (a === "emp-edit") return empDlg(id);
@@ -513,7 +543,7 @@ document.addEventListener("click", async ev => {
     navigator.serviceWorker.getRegistrations().then(rs => {
       rs.forEach(r => { if (r.active && /\/sw\.js/.test(r.active.scriptURL)) r.unregister(); });
     }).catch(() => {});
-    navigator.serviceWorker.register("sw-push.js?v=8").then(() => refreshPushState()).catch(() => {});
+    navigator.serviceWorker.register("sw-push.js?v=9").then(() => refreshPushState()).catch(() => {});
   }
   if (!CFG.SUPABASE_URL || !CFG.SUPABASE_KEY || !window.supabase) { render(); return; }
   sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_KEY);
