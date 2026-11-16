@@ -284,6 +284,16 @@ function vSetup() {
 }
 
 const STAFF_NAV = [["today", "اليوم"], ["month", "الشهر"], ["staff", "الموظفين"], ["money", "سلف وجزاءات"], ["payroll", "المرتبات"], ["announce", "إعلانات"], ["me", "حضوري"]];
+const _svg = p => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
+const ICONS = {
+  today: _svg('<rect x="3" y="4.5" width="18" height="16" rx="2.5"/><path d="M3 9h18M8 2.5v4M16 2.5v4"/><path d="m8.5 14.5 2 2 4-4"/>'),
+  month: _svg('<rect x="3" y="4.5" width="18" height="16" rx="2.5"/><path d="M3 9h18M8 2.5v4M16 2.5v4M7.5 12.5h3M7.5 16h3M13.5 12.5h3M13.5 16h3"/>'),
+  staff: _svg('<circle cx="9" cy="8" r="3.2"/><path d="M3.5 20a5.5 5.5 0 0 1 11 0"/><path d="M16 5.2a3 3 0 0 1 0 5.6M17.5 20a5 5 0 0 0-3-4.6"/>'),
+  money: _svg('<rect x="2.5" y="6" width="19" height="12" rx="2.5"/><circle cx="12" cy="12" r="2.6"/><path d="M6 10v4M18 10v4"/>'),
+  payroll: _svg('<path d="M6 2.5h9l3.5 3.5V21a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1Z"/><path d="M14 2.5V6h3.5M12 10.5c-1.3 0-2 .6-2 1.4 0 1.9 4 1 4 2.8 0 .8-.7 1.4-2 1.4m0-5.6c1 0 1.7.3 2 .9m-2-.9V9.5m0 8.3v-1.2m-2 .1c.3.6 1 1 2 1"/>'),
+  announce: _svg('<path d="M4 9.5v5a1 1 0 0 0 1 1h2.2l6.3 3.8a.6.6 0 0 0 .9-.5V5.2a.6.6 0 0 0-.9-.5L7.2 8.5H5a1 1 0 0 0-1 1Z"/><path d="M18 9a4 4 0 0 1 0 6"/>'),
+  me: _svg('<circle cx="12" cy="8" r="3.4"/><path d="M5.5 20a6.5 6.5 0 0 1 13 0"/>'),
+};
 const VIEWS = { today: vToday, month: vMonth, staff: vStaff, money: vMoney, payroll: vPayroll, announce: vAnnounce, setup: vSetup, me: vMe };
 let raf = 0;
 function render() { cancelAnimationFrame(raf); raf = requestAnimationFrame(paint); }
@@ -300,7 +310,7 @@ function paint() {
   let v = location.hash.slice(1);
   if (!isStaff()) v = "me"; else if (!VIEWS[v]) v = "today";
   S.view = v;
-  if (isStaff()) { nav.hidden = false; nav.innerHTML = STAFF_NAV.map(([k, l]) => `<a href="#${k}" ${k === v ? `aria-current="page"` : ""}>${l}</a>`).join(""); }
+  if (isStaff()) { nav.hidden = false; nav.innerHTML = STAFF_NAV.map(([k, l]) => `<a href="#${k}" ${k === v ? `aria-current="page"` : ""}><span class="ni">${ICONS[k] || ""}</span><span class="nl">${l}</span></a>`).join(""); }
   const sc = $(".scroll"), sl = sc ? sc.scrollLeft : null;
   main.innerHTML = VIEWS[v]();
   if (sl !== null && $(".scroll")) $(".scroll").scrollLeft = sl;
@@ -496,7 +506,7 @@ document.addEventListener("click", async ev => {
     navigator.serviceWorker.getRegistrations().then(rs => {
       rs.forEach(r => { if (r.active && /\/sw\.js/.test(r.active.scriptURL)) r.unregister(); });
     }).catch(() => {});
-    navigator.serviceWorker.register("sw-push.js?v=6").then(() => refreshPushState()).catch(() => {});
+    navigator.serviceWorker.register("sw-push.js?v=7").then(() => refreshPushState()).catch(() => {});
   }
   if (!CFG.SUPABASE_URL || !CFG.SUPABASE_KEY || !window.supabase) { render(); return; }
   sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_KEY);

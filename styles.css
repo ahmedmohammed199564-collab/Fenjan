@@ -1,30 +1,30 @@
 :root{
   /* layout: one working column, summary strip first, tab bar pinned to the thumb */
-  --bg:#F1F4F3; --surface:#FFFFFF; --ink:#15211E; --muted:#5C6966; --line:#D9E1DE;
-  --accent:#0E6B5B; --accent-ink:#FFFFFF; --accent-soft:#DDEEEA;
-  --m-bg:#FBEBC2; --m-ink:#7A5200; --e-bg:#DCE3FB; --e-ink:#2F3F96;
-  --o-bg:#E4E8E7; --o-ink:#4A5653; --a-bg:#FAD7D2; --a-ink:#A1241A;
-  --good:#1B7A47; --bad:#B42318; --warn-bg:#FFF4D6; --warn-ink:#6B4A00;
+  --bg:#FAF5EE; --surface:#FFFFFF; --ink:#2A1F16; --muted:#7A6A5B; --line:#EADFD1;
+  --accent:#8A4E24; --accent-ink:#FFFFFF; --accent-soft:#F3E6D6;
+  --m-bg:#FCEBC6; --m-ink:#8A5A00; --e-bg:#E3E0F6; --e-ink:#4A3F96;
+  --o-bg:#EBE4DA; --o-ink:#6A5B4B; --a-bg:#FADAD3; --a-ink:#A1241A;
+  --good:#2E7D4F; --bad:#B42318; --warn-bg:#FFF2D6; --warn-ink:#6B4A00;
   --display:"Reem Kufi","IBM Plex Sans Arabic",Tahoma,sans-serif;
   --body:"IBM Plex Sans Arabic",Tahoma,"Segoe UI",sans-serif;
-  --r:12px;
+  --r:14px;
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
     color-scheme:dark;
-    --bg:#0F1614; --surface:#18221F; --ink:#E8EFEC; --muted:#9AA8A4; --line:#2B3834;
-    --accent:#4FC3AC; --accent-ink:#06211C; --accent-soft:#17362F;
-    --m-bg:#4A3A10; --m-ink:#FFD98A; --e-bg:#232C5C; --e-ink:#BFCBFF;
-    --o-bg:#2A3431; --o-ink:#B5C1BD; --a-bg:#55201B; --a-ink:#FFB4AB;
+    --bg:#15100C; --surface:#1F1812; --ink:#F0E7DC; --muted:#A99A89; --line:#352A20;
+    --accent:#D79B5D; --accent-ink:#2A1606; --accent-soft:#3A2A1A;
+    --m-bg:#4A3A10; --m-ink:#FFD98A; --e-bg:#2A2C5C; --e-ink:#C6CBFF;
+    --o-bg:#302820; --o-ink:#C4B6A6; --a-bg:#55201B; --a-ink:#FFB4AB;
     --good:#6FD39A; --bad:#FF8A7E; --warn-bg:#3D3210; --warn-ink:#FFE08A;
   }
 }
 :root[data-theme="dark"]{
   color-scheme:dark;
-  --bg:#0F1614; --surface:#18221F; --ink:#E8EFEC; --muted:#9AA8A4; --line:#2B3834;
-  --accent:#4FC3AC; --accent-ink:#06211C; --accent-soft:#17362F;
-  --m-bg:#4A3A10; --m-ink:#FFD98A; --e-bg:#232C5C; --e-ink:#BFCBFF;
-  --o-bg:#2A3431; --o-ink:#B5C1BD; --a-bg:#55201B; --a-ink:#FFB4AB;
+  --bg:#15100C; --surface:#1F1812; --ink:#F0E7DC; --muted:#A99A89; --line:#352A20;
+  --accent:#D79B5D; --accent-ink:#2A1606; --accent-soft:#3A2A1A;
+  --m-bg:#4A3A10; --m-ink:#FFD98A; --e-bg:#2A2C5C; --e-ink:#C6CBFF;
+  --o-bg:#302820; --o-ink:#C4B6A6; --a-bg:#55201B; --a-ink:#FFB4AB;
   --good:#6FD39A; --bad:#FF8A7E; --warn-bg:#3D3210; --warn-ink:#FFE08A;
 }
 *{box-sizing:border-box}
@@ -133,6 +133,27 @@ nav a{white-space:nowrap;min-width:64px}
 .opts button{border:1px solid var(--line);border-radius:10px;padding:12px 6px;font-weight:700;background:var(--surface)}
 
 nav a{flex:1 0 auto;padding-inline:12px}
+
+/* ---- professional tab bar with icons ---- */
+nav{box-shadow:0 -6px 20px rgba(42,31,22,.06)}
+nav a{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;line-height:1;transition:color .15s,background .15s}
+nav a .ni{display:flex}
+nav a .ni svg{width:23px;height:23px;display:block}
+nav a .nl{font-size:11px;font-weight:600}
+nav a[aria-current="page"] .ni svg{stroke-width:2.4}
+@media (min-width:860px){
+  nav{box-shadow:none}
+  nav a{flex-direction:row;gap:8px;padding-block:10px}
+  nav a .ni svg{width:19px;height:19px}
+  nav a .nl{font-size:14px}
+}
+/* brand mark */
+.brandrow{display:flex;align-items:center;gap:10px}
+.logo{width:40px;height:40px;flex:none;border-radius:12px;background:linear-gradient(145deg,var(--accent),color-mix(in srgb,var(--accent) 60%,#000));display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px color-mix(in srgb,var(--accent) 35%,transparent)}
+.logo svg{width:24px;height:24px;color:var(--accent-ink)}
+.btn{box-shadow:0 2px 8px color-mix(in srgb,var(--accent) 22%,transparent)}
+.btn.ghost,.btn.small{box-shadow:none}
+.card{box-shadow:0 1px 3px rgba(42,31,22,.04)}
 
 [hidden]{display:none !important}
 .err:empty{display:none}
