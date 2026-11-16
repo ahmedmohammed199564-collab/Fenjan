@@ -284,8 +284,8 @@ function vSetup() {
   return `<h1>الإعدادات</h1>
   <div class="card stack"><h2>موقع المطعم</h2>
     <div class="row"><span class="grow">${s.site_lat == null ? `<b class="neg">لسه متحددش</b>` : `متحدد <span class="note num">(${(+s.site_lat).toFixed(5)}, ${(+s.site_lng).toFixed(5)})</span>`}</span><span class="note">مسافة السماح: <b class="num">${s.radius_m}</b> متر</span></div>
-    <div class="row"><button class="btn" data-act="set-site" ${S.busy ? "disabled" : ""}>${S.busy ? "لحظة…" : "أنا في المطعم دلوقتي: سجّل الموقع"}</button></div>
-    <p class="note">اقف جوه المطعم ودوس الزرار. الموظف مش هيقدر يسجّل حضور غير وهو جوه مسافة السماح من النقطة دي.</p></div>
+    <div class="row"><button class="btn" data-act="site-dlg">حدّد موقع المطعم على الخريطة</button></div>
+    <p class="note">تقدر تحرّك الدبوس على أي مكان، أو تكتب الإحداثيات، أو تلصق لينك Google Maps. الموظف مش هيقدر يسجّل حضور غير وهو جوه مسافة السماح من النقطة دي.</p></div>
   <div class="card stack"><h2>الشيفتات والقواعد</h2>
     <div class="row"><span class="chip M">صباحي</span><span class="num grow">${t12(s.m_in)} ← ${t12(s.m_out)}</span></div>
     <div class="row"><span class="chip E">مسائي</span><span class="num grow">${t12(s.e_in)} ← ${t12(s.e_out)}</span></div>
@@ -465,6 +465,64 @@ async function setSite() {
   catch (e) { toast(say(e)); }
   S.busy = false; await refresh(true);
 }
+/* ---------- site location picker (map) ---------- */
+function loadLeaflet() {
+  return new Promise(res => {
+    if (window.L) return res();
+    if (!document.getElementById("leaflet-css")) {
+      const css = document.createElement("link"); css.id = "leaflet-css"; css.rel = "stylesheet"; css.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"; document.head.appendChild(css);
+    }
+    const js = document.createElement("script"); js.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+    js.onload = () => res(); js.onerror = () => res(); document.head.appendChild(js);
+  });
+}
+function parseCoords(t) {
+  t = String(t || "");
+  let m = t.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || t.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/) || t.match(/[?&]q=(-?\d+\.\d+),\s*(-?\d+\.\d+)/) || t.match(/(-?\d{1,2}\.\d+)\s*[, ]\s*(-?\d{1,3}\.\d+)/);
+  if (!m) return null;
+  const lat = +m[1], lng = +m[2];
+  if (!isFinite(lat) || !isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+  return { lat, lng };
+}
+let _smap = null, _smk = null, _scr = null;
+function siteDlg() {
+  const s = S.settings;
+  const lat0 = s.site_lat != null ? +s.site_lat : 30.0444, lng0 = s.site_lng != null ? +s.site_lng : 31.2357, rad0 = +s.radius_m || 150;
+  openDlg(`<h3>موقع المطعم</h3>
+    <p class="note" style="margin:0">حرّك الدبوس على مكان المطعم، أو اكتب الإحداثيات، أو الصق لينك Google Maps.</p>
+    <div id="smap" style="height:260px;border-radius:12px;overflow:hidden;border:1px solid var(--line);background:var(--bg)"></div>
+    <div class="row"><input id="s-paste" placeholder="لينك Google Maps أو 30.044, 31.235" style="flex:1"><button type="button" class="btn ghost small" data-set="paste">حدّد</button><button type="button" class="btn ghost small" data-set="here">📍 موقعي</button></div>
+    <div class="two"><label for="s-lat">خط العرض (lat)<input id="s-lat" dir="ltr" inputmode="decimal" value="${lat0.toFixed(6)}"></label><label for="s-lng">خط الطول (lng)<input id="s-lng" dir="ltr" inputmode="decimal" value="${lng0.toFixed(6)}"></label></div>
+    <label for="s-rad">مسافة السماح: <b id="s-rv" class="num">${rad0}</b> متر<input id="s-rad" type="range" min="20" max="1000" step="10" value="${rad0}"></label>
+    ${foot("احفظ الموقع")}`,
+    (fd, err) => {
+      const lat = +$("#s-lat").value, lng = +$("#s-lng").value, rad = +$("#s-rad").value;
+      if (!isFinite(lat) || !isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) return err("إحداثيات غير صحيحة. اكتب خط عرض وخط طول صح.");
+      run(() => q(sb.from("settings").update({ site_lat: lat, site_lng: lng, radius_m: rad }).eq("id", 1)), "الموقع اتحفظ");
+    });
+  const setPin = (lat, lng, recenter) => {
+    $("#s-lat").value = (+lat).toFixed(6); $("#s-lng").value = (+lng).toFixed(6);
+    if (_smk) _smk.setLatLng([lat, lng]); if (_scr) _scr.setLatLng([lat, lng]);
+    if (recenter && _smap) _smap.setView([lat, lng], Math.max(_smap.getZoom(), 16));
+  };
+  loadLeaflet().then(() => {
+    const el = $("#smap"); if (!el) return;
+    if (!window.L) { el.innerHTML = `<div class="empty" style="padding:20px">الخريطة مش متاحة دلوقتي — استخدم الإحداثيات أو زرار «موقعي».</div>`; return; }
+    _smap = L.map(el, { attributionControl: false }).setView([lat0, lng0], 16);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(_smap);
+    _scr = L.circle([lat0, lng0], { radius: rad0, color: "#8A4E24", weight: 2, fillColor: "#8A4E24", fillOpacity: .12 }).addTo(_smap);
+    _smk = L.marker([lat0, lng0], { draggable: true }).addTo(_smap);
+    _smk.on("drag", e => setPin(e.latlng.lat, e.latlng.lng, false));
+    _smap.on("click", e => setPin(e.latlng.lat, e.latlng.lng, false));
+    setTimeout(() => _smap.invalidateSize(), 200);
+  });
+  const rad = $("#s-rad"); if (rad) rad.addEventListener("input", () => { $("#s-rv").textContent = rad.value; if (_scr) _scr.setRadius(+rad.value); });
+  ["s-lat", "s-lng"].forEach(idd => { const el = $("#" + idd); if (el) el.addEventListener("change", () => { const la = +$("#s-lat").value, ln = +$("#s-lng").value; if (isFinite(la) && isFinite(ln)) setPin(la, ln, true); }); });
+  dlg.querySelectorAll("[data-set]").forEach(b => b.addEventListener("click", async () => {
+    if (b.dataset.set === "paste") { const c = parseCoords($("#s-paste").value); if (!c) return toast("معرفناش نقرأ الإحداثيات. استخدم لينك فيه أرقام أو اكتب: خط العرض، خط الطول."); setPin(c.lat, c.lng, true); toast("اتحدد — راجع الدبوس واحفظ."); }
+    if (b.dataset.set === "here") { try { toast("بنحدد موقعك…"); const c = await locate(); setPin(c.latitude, c.longitude, true); } catch (e) { toast(say(e)); } }
+  }));
+}
 
 /* ---------- export ---------- */
 function sheet() {
@@ -507,8 +565,9 @@ document.addEventListener("click", async ev => {
   if (a === "tab") { S.tab = b.dataset.t; return render(); }
   if (a === "punch") return punch();
   if (!isStaff()) return;
-  if ((a === "set-site" || a === "setup-edit") && !can("settings")) return toast("مالكش صلاحية إعدادات المطعم.");
+  if ((a === "set-site" || a === "site-dlg" || a === "setup-edit") && !can("settings")) return toast("مالكش صلاحية إعدادات المطعم.");
   if (/^(adv|pen)-/.test(a) && !can("money")) return toast("مالكش صلاحية السلف والجزاءات.");
+  if (a === "site-dlg") return siteDlg();
   if (a === "set-site") return setSite();
   if (a === "cell") return cellDlg(b.dataset.emp, b.dataset.date);
   if (a === "emp-edit") return empDlg(id);
@@ -543,7 +602,7 @@ document.addEventListener("click", async ev => {
     navigator.serviceWorker.getRegistrations().then(rs => {
       rs.forEach(r => { if (r.active && /\/sw\.js/.test(r.active.scriptURL)) r.unregister(); });
     }).catch(() => {});
-    navigator.serviceWorker.register("sw-push.js?v=9").then(() => refreshPushState()).catch(() => {});
+    navigator.serviceWorker.register("sw-push.js?v=10").then(() => refreshPushState()).catch(() => {});
   }
   if (!CFG.SUPABASE_URL || !CFG.SUPABASE_KEY || !window.supabase) { render(); return; }
   sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_KEY);
