@@ -114,15 +114,15 @@ function vSetupNeeded() {
 }
 function vAuth() {
   const up = S.authMode === "up";
-  return `<form class="card stack auth" id="auth" novalidate>
+  return `<div class="card stack auth" id="auth">
     <div class="tabs"><button type="button" data-act="auth-in" aria-pressed="${!up}">دخول</button><button type="button" data-act="auth-up" aria-pressed="${up}">حساب جديد</button></div>
     <h1>${up ? "حساب جديد" : "تسجيل الدخول"}</h1>
-    ${up ? `<label for="a-name">الاسم بالكامل<input id="a-name" name="name" autocomplete="name"></label>` : ""}
-    <label for="a-id">رقم التليفون<input id="a-id" name="id" dir="ltr" inputmode="tel" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" placeholder="01xxxxxxxxx"></label>
-    <label for="a-pw">كلمة السر${up ? " (6 حروف أو أرقام على الأقل)" : ""}<input id="a-pw" name="pw" type="password" dir="ltr" autocomplete="${up ? "new-password" : "current-password"}"></label>
+    ${up ? `<label for="a-name">الاسم بالكامل<input id="a-name" autocomplete="name"></label>` : ""}
+    <label for="a-id">رقم التليفون<input id="a-id" dir="ltr" inputmode="tel" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" placeholder="01xxxxxxxxx"></label>
+    <label for="a-pw">كلمة السر${up ? " (6 حروف أو أرقام على الأقل)" : ""}<input id="a-pw" type="password" dir="ltr" autocomplete="${up ? "new-password" : "current-password"}" data-act="auth-enter"></label>
     <div class="err" id="a-err" role="alert"></div>
-    <button class="btn" type="submit" id="a-go">${up ? "اعمل الحساب" : "ادخل"}</button>
-    <p class="note">${up ? "أول حساب يتعمل بيبقى صاحب المطعم. أي حساب بعده لازم الإدارة توافق عليه." : "أول مرة تستخدم التطبيق؟ دوس «حساب جديد» فوق. الدخول ده للي عمل حساب قبل كده."}</p></form>`;
+    <button class="btn" type="button" data-act="auth-go" id="a-go">${up ? "اعمل الحساب" : "ادخل"}</button>
+    <p class="note">${up ? "أول حساب يتعمل بيبقى صاحب المطعم. أي حساب بعده لازم الإدارة توافق عليه." : "أول مرة تستخدم التطبيق؟ دوس «حساب جديد» فوق. الدخول ده للي عمل حساب قبل كده."}</p></div>`;
 }
 function vPending() {
   return `<div class="card stack auth"><h1>حسابك مستني الموافقة</h1><p>أهلًا ${esc(S.me.full_name)}. حسابك اتعمل، والإدارة هتوافق عليه وبعدها تقدر تسجّل حضورك.</p>
@@ -278,6 +278,7 @@ function paint() {
   if (sl !== null && $(".scroll")) $(".scroll").scrollLeft = sl;
 }
 window.addEventListener("hashchange", render);
+document.addEventListener("keydown", ev => { if (ev.key === "Enter" && ev.target && ev.target.id === "a-pw") { ev.preventDefault(); doAuth(); } });
 
 /* ---------- dialogs ---------- */
 const dlg = $("#dlg");
@@ -399,16 +400,16 @@ function sheet() {
 }
 
 /* ---------- actions ---------- */
-document.addEventListener("submit", async ev => {
-  if (ev.target.id !== "auth") return;
-  ev.preventDefault();
-  const fd = new FormData(ev.target), err = m => { $("#a-err").textContent = m; };
-  const id = String(fd.get("id") || "").trim(), pw = String(fd.get("pw") || ""), name = String(fd.get("name") || "").trim();
+async function doAuth() {
+  const err = m => { const e = $("#a-err"); if (e) e.textContent = m; };
+  const id = String(($("#a-id") || {}).value || "").trim();
+  const pw = String(($("#a-pw") || {}).value || "");
+  const name = String(($("#a-name") || {}).value || "").trim();
   if (!id.includes("@") && id.replace(/\D/g, "").length < 10) return err("اكتب رقم التليفون كامل.");
   if (pw.length < 6) return err("كلمة السر 6 حروف أو أرقام على الأقل.");
   if (S.authMode === "up" && !name) return err("اكتب اسمك.");
-  const go = $("#a-go"), label = go.textContent;
-  err(""); go.disabled = true; go.textContent = "لحظة…";
+  const go = $("#a-go"), label = go ? go.textContent : "";
+  err(""); if (go) { go.disabled = true; go.textContent = "لحظة…"; }
   try {
     if (S.authMode === "up") {
       const { data, error } = await sb.auth.signUp({ email: toEmail(id), password: pw, options: { data: { full_name: name, phone: id.includes("@") ? "" : id.replace(/\D/g, "") } } });
@@ -419,11 +420,12 @@ document.addEventListener("submit", async ev => {
       if (error) throw error;
     }
   } catch (e) { err(say(e)); if ($("#a-go")) { go.disabled = false; go.textContent = label; } }
-});
+}
 document.addEventListener("click", async ev => {
   const b = ev.target.closest("[data-act]"); if (!b) return;
   const a = b.dataset.act, id = b.dataset.id;
   if (a === "auth-in" || a === "auth-up") { S.authMode = a === "auth-up" ? "up" : "in"; return render(); }
+  if (a === "auth-go") return doAuth();
   if (a === "logout") { await sb.auth.signOut(); return; }
   if (a === "refresh") return refresh();
   if (a === "month") return setMonth(shiftMonth(S.month, +b.dataset.d));
@@ -459,7 +461,9 @@ document.addEventListener("click", async ev => {
 
 /* ---------- start ---------- */
 (async function start() {
-  if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});
+  // No service worker: always load fresh from the network to avoid stale cached code.
+  if ("serviceWorker" in navigator) navigator.serviceWorker.getRegistrations().then(rs => rs.forEach(r => r.unregister())).catch(() => {});
+  if (window.caches && caches.keys) caches.keys().then(ks => ks.forEach(k => caches.delete(k))).catch(() => {});
   if (!CFG.SUPABASE_URL || !CFG.SUPABASE_KEY || !window.supabase) { render(); return; }
   sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_KEY);
   const { data } = await sb.auth.getSession();
