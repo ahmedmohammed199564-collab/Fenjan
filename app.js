@@ -14,8 +14,34 @@ const SHIFT = { M: "صباحي", E: "مسائي" };
 const pad = n => String(n).padStart(2, "0");
 const cairoDate = (d = new Date()) => new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
 const TODAY = cairoDate();
-const S = { session: null, me: null, settings: null, people: [], att: [], adv: [], pen: [], ann: [], month: TODAY.slice(0, 7), view: "", tab: "adv", authMode: "in", busy: false, loading: true, punchMsg: "" };
+const S = { session: null, me: null, settings: null, people: [], att: [], adv: [], pen: [], ann: [], month: TODAY.slice(0, 7), view: "", tab: "adv", authMode: "in", busy: false, loading: true, punchMsg: "", pushOn: false, pushBusy: false };
 let sb = null;
+const VAPID_PUBLIC = "BE9BrAMkVAFH_Yo8OfdjqxzQyVJmqLH3C__aDPTYuQObwHeOh4ymSms2r-Ufgd9rVpqUR2Mcs4eTQvM_7Z3QJe8";
+function urlB64ToU8(s) { const pad = "=".repeat((4 - s.length % 4) % 4); const b = atob((s + pad).replace(/-/g, "+").replace(/_/g, "/")); const a = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) a[i] = b.charCodeAt(i); return a; }
+const pushSupported = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+async function refreshPushState() {
+  try { const reg = await navigator.serviceWorker.ready; const sub = await reg.pushManager.getSubscription(); S.pushOn = !!sub && Notification.permission === "granted"; render(); }
+  catch (e) { S.pushOn = false; }
+}
+async function enablePush() {
+  if (S.pushBusy) return;
+  if (!pushSupported()) { toast("المتصفح ده مش بيدعم الإشعارات. على الآيفون لازم تضيف التطبيق للشاشة الرئيسية الأول."); return; }
+  S.pushBusy = true; render();
+  try {
+    const perm = await Notification.requestPermission();
+    if (perm !== "granted") { toast("لازم تسمح بالإشعارات من المتصفح."); return; }
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlB64ToU8(VAPID_PUBLIC) });
+    await q(sb.from("push_subscriptions").upsert({ user_id: S.me.id, endpoint: sub.endpoint, sub: sub.toJSON() }, { onConflict: "endpoint" }));
+    S.pushOn = true; toast("الإشعارات اتفعّلت ✓");
+  } catch (e) { toast("معرفناش نفعّل الإشعارات: " + ((e && e.message) || e)); }
+  S.pushBusy = false; render();
+}
+function pushBtn() {
+  if (S.pushOn) return `<div class="row"><span class="tag">🔔 إشعارات الموبايل مفعّلة</span></div>`;
+  return `<div class="card stack"><div class="row"><span class="grow">فعّل إشعارات الموبايل علشان توصلك الإعلانات حتى والتطبيق مقفول.</span><button class="btn" data-act="push-on" ${S.pushBusy ? "disabled" : ""}>${S.pushBusy ? "لحظة…" : "فعّل الإشعارات"}</button></div><p class="note">على الآيفون: لازم تضيف التطبيق للشاشة الرئيسية الأول، وبعدين تفعّل من هناك.</p></div>`;
+}
 
 const money = n => (Math.round((+n || 0) * 100) / 100).toLocaleString("en-US");
 const tmin = t => { const [h, m] = String(t || "0:0").split(":").map(Number); return (h || 0) * 60 + (m || 0); };
@@ -139,6 +165,7 @@ function annCards(canDelete) {
 }
 function vAnnounce() {
   return `<h1>إعلان لكل الموظفين</h1>
+  ${pushBtn()}
   <div class="card stack"><label for="ann-body">اكتب الإعلان<textarea id="ann-body" rows="4" placeholder="مثال: اجتماع الموظفين بكرة الساعة ١٢ الظهر."></textarea></label>
     <div class="err" id="ann-err" role="alert"></div>
     <div><button class="btn" data-act="ann-post">ابعت لكل الموظفين</button></div>
@@ -153,6 +180,7 @@ function vMe() {
   const mine = S.att.filter(r => r.user_id === S.me.id).sort((a, b) => b.work_date.localeCompare(a.work_date));
   const myAdv = S.adv.filter(a => a.user_id === S.me.id), myPen = S.pen.filter(x => x.user_id === S.me.id);
   return `<div class="row"><h1 class="grow">أهلًا ${esc(S.me.full_name)}</h1>${monthBar()}</div>
+  ${pushBtn()}
   ${S.ann.length ? `<h2>إعلانات الإدارة</h2>${annCards(false)}` : ""}
   ${S.month === TODAY.slice(0, 7) ? `<div class="card punch">
     <div class="state">${state}</div>
@@ -426,6 +454,7 @@ document.addEventListener("click", async ev => {
   const a = b.dataset.act, id = b.dataset.id;
   if (a === "auth-in" || a === "auth-up") { S.authMode = a === "auth-up" ? "up" : "in"; return render(); }
   if (a === "auth-go") return doAuth();
+  if (a === "push-on") return enablePush();
   if (a === "logout") { await sb.auth.signOut(); return; }
   if (a === "refresh") return refresh();
   if (a === "month") return setMonth(shiftMonth(S.month, +b.dataset.d));
@@ -446,7 +475,7 @@ document.addEventListener("click", async ev => {
   if (a === "ann-post") {
     const el = $("#ann-body"), body = (el && el.value || "").trim();
     if (!body) { const e = $("#ann-err"); if (e) e.textContent = "اكتب الإعلان الأول."; return; }
-    try { await q(sb.from("announcements").insert({ body, author: S.me.full_name })); toast("الإعلان اتبعت لكل الموظفين."); await refresh(true); }
+    try { await q(sb.from("announcements").insert({ body, author: S.me.full_name })); try { await sb.functions.invoke("send-push", { body: { body } }); } catch (_) {} toast("الإعلان اتبعت لكل الموظفين."); await refresh(true); }
     catch (e) { const el2 = $("#ann-err"); if (el2) el2.textContent = say(e); }
     return;
   }
@@ -461,9 +490,14 @@ document.addEventListener("click", async ev => {
 
 /* ---------- start ---------- */
 (async function start() {
-  // No service worker: always load fresh from the network to avoid stale cached code.
-  if ("serviceWorker" in navigator) navigator.serviceWorker.getRegistrations().then(rs => rs.forEach(r => r.unregister())).catch(() => {});
+  // Clear any old caching worker, then register the push-only worker (no fetch handler → never serves stale code).
   if (window.caches && caches.keys) caches.keys().then(ks => ks.forEach(k => caches.delete(k))).catch(() => {});
+  if ("serviceWorker" in navigator && location.protocol === "https:") {
+    navigator.serviceWorker.getRegistrations().then(rs => {
+      rs.forEach(r => { if (r.active && /\/sw\.js/.test(r.active.scriptURL)) r.unregister(); });
+    }).catch(() => {});
+    navigator.serviceWorker.register("sw-push.js?v=6").then(() => refreshPushState()).catch(() => {});
+  }
   if (!CFG.SUPABASE_URL || !CFG.SUPABASE_KEY || !window.supabase) { render(); return; }
   sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_KEY);
   const { data } = await sb.auth.getSession();
