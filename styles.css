@@ -1,10 +1,10 @@
 :root{
   /* layout: one working column, summary strip first, tab bar pinned to the thumb */
-  --bg:#FAF5EE; --surface:#FFFFFF; --ink:#2A1F16; --muted:#7A6A5B; --line:#EADFD1;
-  --accent:#8A4E24; --accent-ink:#FFFFFF; --accent-soft:#F3E6D6;
-  --m-bg:#FCEBC6; --m-ink:#8A5A00; --e-bg:#E3E0F6; --e-ink:#4A3F96;
-  --o-bg:#EBE4DA; --o-ink:#6A5B4B; --a-bg:#FADAD3; --a-ink:#A1241A;
-  --good:#2E7D4F; --bad:#B42318; --warn-bg:#FFF2D6; --warn-ink:#6B4A00;
+  --bg:#F4F7FC; --surface:#FFFFFF; --ink:#152038; --muted:#5B667E; --line:#DEE5F1;
+  --accent:#1E50C8; --accent-ink:#FFFFFF; --accent-soft:#E2E9FB;
+  --m-bg:#FCEBC6; --m-ink:#8A5A00; --e-bg:#E8E0F7; --e-ink:#5A3FA0;
+  --o-bg:#E6EAF2; --o-ink:#566179; --a-bg:#FADAD3; --a-ink:#A1241A;
+  --good:#1E7A4B; --bad:#B42318; --warn-bg:#FFF2D6; --warn-ink:#6B4A00;
   --display:"Reem Kufi","IBM Plex Sans Arabic",Tahoma,sans-serif;
   --body:"IBM Plex Sans Arabic",Tahoma,"Segoe UI",sans-serif;
   --r:14px;
@@ -12,19 +12,19 @@
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
     color-scheme:dark;
-    --bg:#15100C; --surface:#1F1812; --ink:#F0E7DC; --muted:#A99A89; --line:#352A20;
-    --accent:#D79B5D; --accent-ink:#2A1606; --accent-soft:#3A2A1A;
-    --m-bg:#4A3A10; --m-ink:#FFD98A; --e-bg:#2A2C5C; --e-ink:#C6CBFF;
-    --o-bg:#302820; --o-ink:#C4B6A6; --a-bg:#55201B; --a-ink:#FFB4AB;
+    --bg:#0D1118; --surface:#161C28; --ink:#E8EEF9; --muted:#97A3BC; --line:#273145;
+    --accent:#6E93F6; --accent-ink:#0A1530; --accent-soft:#1E2A4C;
+    --m-bg:#4A3A10; --m-ink:#FFD98A; --e-bg:#2E2A5C; --e-ink:#CBC4FF;
+    --o-bg:#232B3A; --o-ink:#AEB9CE; --a-bg:#55201B; --a-ink:#FFB4AB;
     --good:#6FD39A; --bad:#FF8A7E; --warn-bg:#3D3210; --warn-ink:#FFE08A;
   }
 }
 :root[data-theme="dark"]{
   color-scheme:dark;
-  --bg:#15100C; --surface:#1F1812; --ink:#F0E7DC; --muted:#A99A89; --line:#352A20;
-  --accent:#D79B5D; --accent-ink:#2A1606; --accent-soft:#3A2A1A;
-  --m-bg:#4A3A10; --m-ink:#FFD98A; --e-bg:#2A2C5C; --e-ink:#C6CBFF;
-  --o-bg:#302820; --o-ink:#C4B6A6; --a-bg:#55201B; --a-ink:#FFB4AB;
+  --bg:#0D1118; --surface:#161C28; --ink:#E8EEF9; --muted:#97A3BC; --line:#273145;
+  --accent:#6E93F6; --accent-ink:#0A1530; --accent-soft:#1E2A4C;
+  --m-bg:#4A3A10; --m-ink:#FFD98A; --e-bg:#2E2A5C; --e-ink:#CBC4FF;
+  --o-bg:#232B3A; --o-ink:#AEB9CE; --a-bg:#55201B; --a-ink:#FFB4AB;
   --good:#6FD39A; --bad:#FF8A7E; --warn-bg:#3D3210; --warn-ink:#FFE08A;
 }
 *{box-sizing:border-box}
@@ -208,12 +208,12 @@ input[type=range]{accent-color:var(--accent);padding:0;background:transparent;bo
 #printroot{display:none}
 #printroot.on{display:block;position:fixed;inset:0;z-index:100;background:rgba(0,0,0,.55);overflow:auto;padding:16px}
 .paysheet{max-width:640px;margin:0 auto;background:#fff;color:#1a1a1a;border-radius:14px;padding:26px;font-size:15px}
-.pshead{display:flex;align-items:center;gap:12px;border-bottom:2px solid #8A4E24;padding-bottom:14px}
-.pslogo{width:48px;height:48px;border-radius:12px;background:#8A4E24;color:#fff;display:flex;align-items:center;justify-content:center}
+.pshead{display:flex;align-items:center;gap:12px;border-bottom:2px solid #1E50C8;padding-bottom:14px}
+.pslogo{width:48px;height:48px;border-radius:12px;background:#1E50C8;color:#fff;display:flex;align-items:center;justify-content:center}
 .pslogo svg{width:28px;height:28px}
-.psname{font-family:var(--display);font-size:24px;font-weight:700;color:#8A4E24;line-height:1}
+.psname{font-family:var(--display);font-size:24px;font-weight:700;color:#1E50C8;line-height:1}
 .pssub{font-size:13px;color:#666}
-.psmonth{margin-inline-start:auto;font-weight:700;background:#F3E6D6;color:#8A4E24;padding:6px 12px;border-radius:999px;font-size:14px}
+.psmonth{margin-inline-start:auto;font-weight:700;background:#E2E9FB;color:#1E50C8;padding:6px 12px;border-radius:999px;font-size:14px}
 .psmeta{display:flex;flex-wrap:wrap;gap:14px;margin:16px 0}
 .psmeta div{display:flex;flex-direction:column}
 .psmeta span{font-size:12px;color:#777}
@@ -227,9 +227,9 @@ input[type=range]{accent-color:var(--accent);padding:0;background:transparent;bo
 .pstable.grid2 th{font-size:12px;color:#777;border-bottom:2px solid #ddd}
 .pstable.grid2 .num{text-align:center}
 .pstable.grid2 tfoot td{border-top:2px solid #ddd;font-weight:700}
-.psnet{display:flex;align-items:center;justify-content:space-between;background:#F3E6D6;border-radius:12px;padding:14px 18px;margin-top:12px}
-.psnet span{font-weight:700;color:#5a3418}
-.psnet b{font-size:22px;color:#8A4E24}
+.psnet{display:flex;align-items:center;justify-content:space-between;background:#E2E9FB;border-radius:12px;padding:14px 18px;margin-top:12px}
+.psnet span{font-weight:700;color:#15336B}
+.psnet b{font-size:22px;color:#1E50C8}
 .psfoot{font-size:12px;color:#888;margin-top:16px;line-height:1.7}
 @media print{
   .app,#dlg,#toast,nav,header{display:none !important}
