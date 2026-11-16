@@ -14,7 +14,7 @@ const SHIFT = { M: "صباحي", E: "مسائي" };
 const pad = n => String(n).padStart(2, "0");
 const cairoDate = (d = new Date()) => new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
 const TODAY = cairoDate();
-const S = { session: null, me: null, settings: null, people: [], att: [], adv: [], pen: [], ann: [], leave: [], month: TODAY.slice(0, 7), view: "", tab: "adv", authMode: "in", busy: false, loading: true, punchMsg: "", pushOn: false, pushBusy: false };
+const S = { session: null, me: null, settings: null, people: [], att: [], adv: [], pen: [], ann: [], leave: [], adj: [], rota: [], closes: [], audit: [], month: TODAY.slice(0, 7), view: "", tab: "adv", authMode: "in", busy: false, loading: true, punchMsg: "", pushOn: false, pushBusy: false };
 let sb = null;
 const VAPID_PUBLIC = "BE9BrAMkVAFH_Yo8OfdjqxzQyVJmqLH3C__aDPTYuQObwHeOh4ymSms2r-Ufgd9rVpqUR2Mcs4eTQvM_7Z3QJe8";
 function urlB64ToU8(s) { const pad = "=".repeat((4 - s.length % 4) % 4); const b = atob((s + pad).replace(/-/g, "+").replace(/_/g, "/")); const a = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) a[i] = b.charCodeAt(i); return a; }
@@ -109,15 +109,19 @@ async function loadMonth() {
   const from = S.month + "-01", to = S.month + "-" + pad(daysIn(S.month));
   const mine = !isStaff();
   const scope = x => mine ? x.eq("user_id", S.me.id) : x;
-  const [people, att, adv, pen, ann, leave] = await Promise.all([
+  const [people, att, adv, pen, ann, leave, adj, rota, closes, audit] = await Promise.all([
     isStaff() ? q(sb.from("profiles").select("*").order("full_name")) : Promise.resolve([S.me]),
     q(scope(sb.from("attendance").select("*").gte("work_date", from).lte("work_date", to))),
     q(scope(sb.from("advances").select("*").gte("entry_date", from).lte("entry_date", to)).order("entry_date", { ascending: false })),
     q(scope(sb.from("penalties").select("*").gte("entry_date", from).lte("entry_date", to)).order("entry_date", { ascending: false })),
     q(sb.from("announcements").select("*").order("created_at", { ascending: false }).limit(50)).catch(() => []),
     q(scope(sb.from("leave_requests").select("*").order("created_at", { ascending: false }).limit(100))).catch(() => []),
+    q(scope(sb.from("adjustments").select("*").gte("entry_date", from).lte("entry_date", to)).order("entry_date", { ascending: false })).catch(() => []),
+    q(scope(sb.from("shift_schedule").select("*").gte("work_date", from).lte("work_date", to))).catch(() => []),
+    q(sb.from("month_close").select("*").order("month", { ascending: false }).limit(24)).catch(() => []),
+    isOwner() ? q(sb.from("audit_log").select("*").order("created_at", { ascending: false }).limit(60)).catch(() => []) : Promise.resolve([]),
   ]);
-  Object.assign(S, { people, att, adv, pen, ann: ann || [], leave: leave || [] });
+  Object.assign(S, { people, att, adv, pen, ann: ann || [], leave: leave || [], adj: adj || [], rota: rota || [], closes: closes || [], audit: audit || [] });
 }
 async function refresh(silent) {
   if (!S.session) return;
@@ -138,14 +142,22 @@ function tally(uid) {
   });
   return c;
 }
+function otHoursFor(uid) {
+  const rate = +S.settings.ot_rate || 0; if (!rate) return 0;
+  let h = 0; S.att.filter(r => r.user_id === uid && r.status === "present" && r.shift && r.check_in && r.check_out).forEach(r => { h += Math.max(0, rowHours(r) - shiftHours(r.shift)); });
+  return Math.round(h * 100) / 100;
+}
 function payroll() {
+  const otRate = +S.settings.ot_rate || 0;
   return workers().map(p => {
     const c = tally(p.id), salary = +p.salary || 0;
-    const adv = S.adv.filter(a => a.user_id === p.id), pen = S.pen.filter(x => x.user_id === p.id);
+    const adv = S.adv.filter(a => a.user_id === p.id), pen = S.pen.filter(x => x.user_id === p.id), adj = S.adj.filter(x => x.user_id === p.id);
     const advBal = adv.reduce((s, a) => s + (+a.amount || 0) - (+a.repaid || 0), 0), penSum = pen.reduce((s, x) => s + (+x.amount || 0), 0);
+    const allow = adj.reduce((s, x) => s + (+x.amount || 0), 0);
+    const otHours = otHoursFor(p.id), otPay = Math.round(otHours * otRate * 100) / 100;
     const absDed = S.settings.absence_deduct ? Math.round(salary / (S.settings.divisor || 30) * c.absent * 100) / 100 : 0;
     const ded = absDed + advBal + penSum;
-    return { p, c, salary, advBal, penCount: pen.length, penSum, absDed, ded, net: salary - ded };
+    return { p, c, salary, advBal, penCount: pen.length, penSum, allow, otHours, otPay, absDed, ded, net: salary + otPay + allow - ded };
   });
 }
 
@@ -196,7 +208,8 @@ function vDash() {
     <div class="barchart">${bars}</div>
     <div class="row" style="justify-content:space-between"><span class="note">١</span><span class="note">${dim}</span></div></div>
   <div class="card stack"><h2>أكتر الموظفين تأخيرًا</h2>
-    ${topLate.length ? topLate.map(x => `<div class="lrow"><div class="row" style="gap:10px">${avatar(x.p.full_name, 34)}<span class="grow">${esc(x.p.full_name || "—")}</span><b class="num">${x.n}</b></div><div class="ltrack"><div class="lfill" style="width:${Math.round(x.n / maxLate * 100)}%"></div></div></div>`).join("") : `<p class="note" style="margin:0">مفيش تأخير متسجل الشهر ده 👏</p>`}</div>`;
+    ${topLate.length ? topLate.map(x => `<div class="lrow"><div class="row" style="gap:10px">${avatar(x.p.full_name, 34)}<span class="grow">${esc(x.p.full_name || "—")}</span><b class="num">${x.n}</b></div><div class="ltrack"><div class="lfill" style="width:${Math.round(x.n / maxLate * 100)}%"></div></div></div>`).join("") : `<p class="note" style="margin:0">مفيش تأخير متسجل الشهر ده 👏</p>`}</div>
+  ${can("payroll") && S.closes.length ? `<div class="card stack"><h2>أرشيف الشهور المقفولة</h2>${(() => { const cs = [...S.closes].sort((a, b) => a.month.localeCompare(b.month)); const mx = Math.max(1, ...cs.map(c => +c.net_total || 0)); return cs.map(c => `<div class="lrow"><div class="row"><span class="grow">${monthLabel(c.month)}</span><b class="num">${money(c.net_total)} ج</b></div><div class="ltrack"><div class="lfill" style="width:${Math.round((+c.net_total || 0) / mx * 100)}%;background:linear-gradient(90deg,var(--accent),color-mix(in srgb,var(--accent) 70%,#000))"></div></div></div>`).join(""); })()}<p class="note" style="margin:0">مقارنة صافي المرتبات بين الشهور المقفولة.</p></div>` : ""}`;
 }
 
 function vSetupNeeded() {
@@ -292,6 +305,7 @@ function vMe() {
   <div class="row"><button class="btn ghost small" data-act="payslip" data-id="${esc(S.me.id)}">🧾 قسيمة راتبي (PDF)</button></div>
   <div class="row" style="margin-top:4px"><h2 class="grow">إجازاتي وطلباتي</h2><button class="btn small" data-act="leave-new">+ اطلب إجازة</button></div>
   ${S.leave.length ? `<div class="stack">${S.leave.slice(0, 6).map(l => leaveCard(l, false)).join("")}</div>` : `<div class="card empty">مفيش طلبات لسه. اطلب إجازة من الزرار فوق.</div>`}
+  ${(() => { const mr = S.rota.filter(r => r.user_id === S.me.id && r.work_date >= TODAY).sort((a, b) => a.work_date.localeCompare(b.work_date)).slice(0, 7); return mr.length ? `<h2>شيفتاتك الجاية</h2><div class="card"><div class="row" style="gap:8px;flex-wrap:wrap">${mr.map(r => `<span class="chip ${r.shift === "off" ? "O" : r.shift}">${esc(r.work_date.slice(5))} · ${r.shift === "off" ? "إجازة" : SHIFT[r.shift]}</span>`).join("")}</div></div>` : ""; })()}
   <h2>حضوري في ${monthLabel(S.month)}</h2>
   ${mine.length ? `<div class="scroll"><table><thead><tr><th>اليوم</th><th>الحالة</th><th>دخول</th><th>انصراف</th><th>ساعات</th><th>تأخير</th></tr></thead><tbody>${mine.map(r => `<tr><td class="num">${esc(r.work_date.slice(8))}</td><td>${r.status === "present" ? `<span class="chip ${r.shift || "M"}">${SHIFT[r.shift] || "حاضر"}</span>` : r.status === "off" ? `<span class="chip O">إجازة</span>` : `<span class="chip A">غياب</span>`}</td><td class="num">${clock(r.check_in)}</td><td class="num">${clock(r.check_out)}</td><td class="num">${money(rowHours(r))}</td><td class="num">${r.late_min > 0 ? r.late_min + " د" : "—"}</td></tr>`).join("")}</tbody></table></div>` : `<div class="card empty">مفيش حضور متسجل في الشهر ده.</div>`}
   ${myAdv.length ? `<h2>سلفي</h2><div class="scroll"><table><thead><tr><th>التاريخ</th><th>السلفة</th><th>المسدد</th><th>المتبقي</th></tr></thead><tbody>${myAdv.map(a => `<tr><td class="num">${esc(a.entry_date)}</td><td class="num">${money(a.amount)}</td><td class="num">${money(a.repaid)}</td><td class="num money">${money(a.amount - a.repaid)}</td></tr>`).join("")}</tbody></table></div>` : ""}
@@ -351,27 +365,63 @@ function vStaff() {
   ${rest.length ? `<div class="card">${rest.map(card).join("")}</div>` : ""}
   <p class="note">علشان تضيف موظف: ابعتله لينك التطبيق، يعمل حساب برقم تليفونه، وبعدين يظهر هنا وتوافق عليه. وافق بس على اللي تعرفهم.</p>`;
 }
+function vRota() {
+  const ws = workers(), n = daysIn(S.month), [y, m] = S.month.split("-").map(Number);
+  const head = `<div class="row"><h1 class="grow">جدول الشيفتات</h1>${monthBar()}</div>`;
+  if (!ws.length) return head + `<div class="card empty"><b>لسه مفيش موظفين</b></div>`;
+  const map = {}; S.rota.forEach(r => map[r.user_id + "|" + r.work_date] = r.shift);
+  let th = `<th class="who">الموظف</th>`;
+  for (let i = 1; i <= n; i++) { const wd = new Date(y, m - 1, i).getDay(), iso = `${S.month}-${pad(i)}`; th += `<th class="${iso === TODAY ? "today" : wd === 5 ? "fri" : ""}"><small>${WD[wd]}</small><span class="num">${i}</span></th>`; }
+  const body = ws.map(p => {
+    let tds = `<td class="who">${esc(p.full_name)}</td>`;
+    for (let i = 1; i <= n; i++) { const iso = `${S.month}-${pad(i)}`, sh = map[p.id + "|" + iso]; const cls = sh === "off" ? "O" : sh || ""; const txt = sh === "off" ? "ج" : sh === "E" ? "م" : sh === "M" ? "ص" : ""; tds += `<td><button class="d ${cls}" data-act="rota-cell" data-emp="${esc(p.id)}" data-date="${iso}">${txt}</button></td>`; }
+    return `<tr>${tds}</tr>`;
+  }).join("");
+  return head + `<div class="scroll"><table class="grid"><thead><tr>${th}</tr></thead><tbody>${body}</tbody></table></div>
+  <p class="note">دوس على أي يوم علشان تحدّد الشيفت: فاضي ← <b>ص</b> صباحي ← <b>م</b> مسائي ← <b>ج</b> إجازة ← فاضي. الموظف بيشوف جدوله في شاشته. ده جدول مخطط ومنفصل عن الحضور الفعلي.</p>`;
+}
+async function rotaCycle(emp, date) {
+  const row = S.rota.find(r => r.user_id === emp && r.work_date === date), cur = row ? row.shift : undefined;
+  const next = cur === undefined ? "M" : cur === "M" ? "E" : cur === "E" ? "off" : null;
+  try {
+    if (next === null) await q(sb.from("shift_schedule").delete().eq("user_id", emp).eq("work_date", date));
+    else await q(sb.from("shift_schedule").upsert({ user_id: emp, work_date: date, shift: next }, { onConflict: "user_id,work_date" }));
+    await refresh(true);
+  } catch (e) { toast(say(e)); }
+}
 function vMoney() {
-  const isAdv = S.tab === "adv", rows = isAdv ? S.adv : S.pen;
-  const head = `<div class="row"><h1 class="grow">سلف وجزاءات</h1>${monthBar()}</div>
-    <div class="row"><div class="tabs grow"><button data-act="tab" data-t="adv" aria-pressed="${isAdv}">السلف</button><button data-act="tab" data-t="pen" aria-pressed="${!isAdv}">الجزاءات</button></div><button class="btn" data-act="${isAdv ? "adv-new" : "pen-new"}" ${workers().length ? "" : "disabled"}>${isAdv ? "سجّل سلفة" : "سجّل جزاء"}</button></div>`;
-  if (!rows.length) return head + `<div class="card empty"><b>مفيش ${isAdv ? "سلف" : "جزاءات"} في ${monthLabel(S.month)}</b></div>`;
+  const tab = S.tab === "pen" ? "pen" : S.tab === "allow" ? "allow" : "adv";
+  const isAdv = tab === "adv", isPen = tab === "pen", isAllow = tab === "allow";
+  const rows = isAdv ? S.adv : isPen ? S.pen : S.adj;
+  const newAct = isAdv ? "adv-new" : isPen ? "pen-new" : "allow-new";
+  const addLbl = isAdv ? "سجّل سلفة" : isPen ? "سجّل جزاء" : "سجّل بدل/حافز";
+  const head = `<div class="row"><h1 class="grow">سلف وجزاءات وبدلات</h1>${monthBar()}</div>
+    <div class="row"><div class="tabs grow"><button data-act="tab" data-t="adv" aria-pressed="${isAdv}">السلف</button><button data-act="tab" data-t="pen" aria-pressed="${isPen}">الجزاءات</button><button data-act="tab" data-t="allow" aria-pressed="${isAllow}">بدلات وحوافز</button></div><button class="btn" data-act="${newAct}" ${workers().length ? "" : "disabled"}>${addLbl}</button></div>`;
+  if (!rows.length) return head + `<div class="card empty"><b>مفيش ${isAdv ? "سلف" : isPen ? "جزاءات" : "بدلات"} في ${monthLabel(S.month)}</b></div>`;
   if (isAdv) return head + `<div class="scroll"><table><thead><tr><th>التاريخ</th><th>الموظف</th><th>السلفة</th><th>المسدد</th><th>المتبقي</th><th>ملاحظات</th><th></th></tr></thead><tbody>${rows.map(a => `<tr><td class="num">${esc(a.entry_date)}</td><td>${esc(person(a.user_id).full_name || "—")}</td><td class="num">${money(a.amount)}</td><td class="num">${money(a.repaid)}</td><td class="num money">${money(a.amount - a.repaid)}</td><td style="white-space:normal;min-width:120px">${esc(a.note)}</td><td><button class="btn ghost small" data-act="adv-edit" data-id="${a.id}">تعديل</button> <button class="btn ghost small" data-act="adv-del" data-id="${a.id}">حذف</button></td></tr>`).join("")}</tbody>
     <tfoot><tr><td colspan="4">إجمالي المتبقي</td><td class="num">${money(rows.reduce((s, a) => s + (a.amount - a.repaid), 0))}</td><td colspan="2"></td></tr></tfoot></table></div>`;
-  return head + `<div class="scroll"><table><thead><tr><th>التاريخ</th><th>الموظف</th><th>السبب</th><th>الخصم</th><th>ملاحظات</th><th></th></tr></thead><tbody>${rows.map(x => `<tr><td class="num">${esc(x.entry_date)}</td><td>${esc(person(x.user_id).full_name || "—")}</td><td>${esc(x.reason)}</td><td class="num money">${money(x.amount)}</td><td style="white-space:normal;min-width:120px">${esc(x.note)}</td><td><button class="btn ghost small" data-act="pen-edit" data-id="${x.id}">تعديل</button> <button class="btn ghost small" data-act="pen-del" data-id="${x.id}">حذف</button></td></tr>`).join("")}</tbody>
+  if (isPen) return head + `<div class="scroll"><table><thead><tr><th>التاريخ</th><th>الموظف</th><th>السبب</th><th>الخصم</th><th>ملاحظات</th><th></th></tr></thead><tbody>${rows.map(x => `<tr><td class="num">${esc(x.entry_date)}</td><td>${esc(person(x.user_id).full_name || "—")}</td><td>${esc(x.reason)}</td><td class="num money">${money(x.amount)}</td><td style="white-space:normal;min-width:120px">${esc(x.note)}</td><td><button class="btn ghost small" data-act="pen-edit" data-id="${x.id}">تعديل</button> <button class="btn ghost small" data-act="pen-del" data-id="${x.id}">حذف</button></td></tr>`).join("")}</tbody>
     <tfoot><tr><td colspan="3">إجمالي الخصومات</td><td class="num">${money(rows.reduce((s, x) => s + (+x.amount || 0), 0))}</td><td colspan="2"></td></tr></tfoot></table></div>`;
+  return head + `<div class="scroll"><table><thead><tr><th>التاريخ</th><th>الموظف</th><th>النوع</th><th>القيمة</th><th>ملاحظات</th><th></th></tr></thead><tbody>${rows.map(x => `<tr><td class="num">${esc(x.entry_date)}</td><td>${esc(person(x.user_id).full_name || "—")}</td><td>${x.kind === "bonus" ? "حافز/مكافأة" : "بدل"}</td><td class="num pos">${money(x.amount)}</td><td style="white-space:normal;min-width:120px">${esc(x.note)}</td><td><button class="btn ghost small" data-act="allow-edit" data-id="${x.id}">تعديل</button> <button class="btn ghost small" data-act="allow-del" data-id="${x.id}">حذف</button></td></tr>`).join("")}</tbody>
+    <tfoot><tr><td colspan="3">إجمالي البدلات والحوافز</td><td class="num pos">${money(rows.reduce((s, x) => s + (+x.amount || 0), 0))}</td><td colspan="2"></td></tr></tfoot></table></div>`;
 }
 function vPayroll() {
   const rows = payroll(), ad = S.settings.absence_deduct;
+  const showOT = (+S.settings.ot_rate || 0) > 0, showAllow = S.adj.length > 0;
+  const closed = S.closes.some(c => c.month === S.month);
   const head = `<div class="row"><h1 class="grow">كشف المرتبات</h1>${monthBar()}</div>`;
   if (!rows.length) return head + `<div class="card empty"><b>لسه مفيش موظفين</b></div>`;
-  const T = rows.reduce((t, r) => ({ salary: t.salary + r.salary, ded: t.ded + r.ded, net: t.net + r.net, hours: t.hours + r.c.hours, absent: t.absent + r.c.absent }), { salary: 0, ded: 0, net: 0, hours: 0, absent: 0 });
-  return head + `<div class="tiles"><div class="tile"><b class="num">${money(T.net)}</b><span>صافي المرتبات (جنيه)</span></div><div class="tile"><b class="num">${money(T.ded)}</b><span>إجمالي الخصومات</span></div><div class="tile"><b class="num">${money(T.hours)}</b><span>ساعات الشغل</span></div><div class="tile A"><b class="num">${T.absent}</b><span>أيام غياب</span></div></div>
-  <div class="scroll"><table><thead><tr><th>الموظف</th><th>أيام الشغل</th><th>إجازة</th><th>غياب</th><th>تأخير</th><th>ساعات</th><th>المرتب</th>${ad ? "<th>خصم الغياب</th>" : ""}<th>متبقي السلف</th><th>الجزاءات</th><th>الصافي</th><th></th></tr></thead><tbody>
-  ${rows.map(r => `<tr><td><b>${esc(r.p.full_name)}</b><div class="pjob">${esc(r.p.job || "")}</div></td><td class="num">${r.c.worked}</td><td class="num">${r.c.off}</td><td class="num">${r.c.absent ? `<span class="chip A">${r.c.absent}</span>` : 0}</td><td class="num">${r.c.lates ? `${r.c.lates} (${r.c.lateMin} د)` : 0}</td><td class="num">${money(r.c.hours)}</td><td class="num">${money(r.salary)}</td>${ad ? `<td class="num">${money(r.absDed)}</td>` : ""}<td class="num">${money(r.advBal)}</td><td class="num">${money(r.penSum)}</td><td class="num money ${r.net < 0 ? "neg" : ""}">${money(r.net)}</td><td><button class="btn ghost small" data-act="payslip" data-id="${esc(r.p.id)}">قسيمة</button></td></tr>`).join("")}
-  </tbody><tfoot><tr><td colspan="6">الإجمالي</td><td class="num">${money(T.salary)}</td>${ad ? "<td></td>" : ""}<td colspan="2"></td><td class="num">${money(T.net)}</td><td></td></tr></tfoot></table></div>
+  const T = rows.reduce((t, r) => ({ salary: t.salary + r.salary, ded: t.ded + r.ded, net: t.net + r.net, hours: t.hours + r.c.hours, absent: t.absent + r.c.absent, ot: t.ot + r.otPay, allow: t.allow + r.allow }), { salary: 0, ded: 0, net: 0, hours: 0, absent: 0, ot: 0, allow: 0 });
+  const cols = 7 + (showOT ? 1 : 0) + (showAllow ? 1 : 0) + (ad ? 1 : 0) + 4;
+  const closeBar = closed
+    ? `<div class="banner"><span class="grow">🔒 الشهر ده مقفول — أرقامه متثبّتة.</span>${can("payroll") ? `<button class="btn small danger" data-act="month-open">افتح الشهر</button>` : ""}</div>`
+    : can("payroll") ? `<div class="row"><button class="btn ghost small" data-act="month-close">🔒 اقفل الشهر</button></div>` : "";
+  return head + closeBar + `<div class="tiles"><div class="tile"><b class="num">${money(T.net)}</b><span>صافي المرتبات (جنيه)</span></div>${showOT ? `<div class="tile"><b class="num">${money(T.ot)}</b><span>أوفر تايم</span></div>` : ""}${showAllow ? `<div class="tile"><b class="num">${money(T.allow)}</b><span>بدلات وحوافز</span></div>` : ""}<div class="tile"><b class="num">${money(T.ded)}</b><span>إجمالي الخصومات</span></div><div class="tile A"><b class="num">${T.absent}</b><span>أيام غياب</span></div></div>
+  <div class="scroll"><table><thead><tr><th>الموظف</th><th>أيام الشغل</th><th>إجازة</th><th>غياب</th><th>تأخير</th><th>ساعات</th><th>المرتب</th>${showOT ? "<th>أوفر</th>" : ""}${showAllow ? "<th>بدلات</th>" : ""}${ad ? "<th>خصم الغياب</th>" : ""}<th>متبقي السلف</th><th>الجزاءات</th><th>الصافي</th><th></th></tr></thead><tbody>
+  ${rows.map(r => `<tr><td><b>${esc(r.p.full_name)}</b><div class="pjob">${esc(r.p.job || "")}</div></td><td class="num">${r.c.worked}</td><td class="num">${r.c.off}</td><td class="num">${r.c.absent ? `<span class="chip A">${r.c.absent}</span>` : 0}</td><td class="num">${r.c.lates ? `${r.c.lates} (${r.c.lateMin} د)` : 0}</td><td class="num">${money(r.c.hours)}</td><td class="num">${money(r.salary)}</td>${showOT ? `<td class="num pos">${r.otPay ? money(r.otPay) : "—"}</td>` : ""}${showAllow ? `<td class="num pos">${r.allow ? money(r.allow) : "—"}</td>` : ""}${ad ? `<td class="num">${money(r.absDed)}</td>` : ""}<td class="num">${money(r.advBal)}</td><td class="num">${money(r.penSum)}</td><td class="num money ${r.net < 0 ? "neg" : ""}">${money(r.net)}</td><td><button class="btn ghost small" data-act="payslip" data-id="${esc(r.p.id)}">قسيمة</button></td></tr>`).join("")}
+  </tbody><tfoot><tr><td colspan="${cols - 2}">الإجمالي</td><td class="num money">${money(T.net)}</td><td></td></tr></tfoot></table></div>
   <div class="row"><button class="btn" data-act="csv">نزّل الكشف (Excel)</button><button class="btn ghost" data-act="print-pay">🖨️ اطبع الكشف (PDF)</button><button class="btn ghost" data-act="copy">انسخ الكشف</button></div>
-  <p class="note">الصافي = المرتب − ${ad ? "خصم الغياب − " : ""}المتبقي من سلف الشهر − جزاءات الشهر. ${ad ? `خصم يوم الغياب = المرتب ÷ ${S.settings.divisor}.` : "خصم أيام الغياب مقفول، وتقدر تشغّله من الإعدادات."} التأخير بيظهر للعلم ومش بيتخصم لوحده. الضرايب والتأمينات مش محسوبة هنا.</p>`;
+  <p class="note">الصافي = المرتب ${showOT ? "+ أوفر تايم " : ""}${showAllow ? "+ بدلات " : ""}${ad ? "− خصم الغياب " : ""}− المتبقي من سلف الشهر − جزاءات الشهر. ${showOT ? `ساعة الأوفر تايم = ${money(S.settings.ot_rate)} ج. ` : ""}${ad ? `خصم يوم الغياب = المرتب ÷ ${S.settings.divisor}. ` : ""}التأخير بيظهر للعلم ومش بيتخصم لوحده. الضرايب والتأمينات مش محسوبة هنا.</p>`;
 }
 function vSetup() {
   const s = S.settings;
@@ -385,8 +435,15 @@ function vSetup() {
     <div class="row"><span class="chip E">مسائي</span><span class="num grow">${t12(s.e_in)} ← ${t12(s.e_out)}</span></div>
     <div class="row"><span class="grow">فترة السماح قبل ما يتحسب تأخير</span><b class="num">${s.grace_min} دقيقة</b></div>
     <div class="row"><span class="grow">خصم أيام الغياب من المرتب</span><b>${s.absence_deduct ? `شغّال (÷ ${s.divisor})` : "مقفول"}</b></div>
+    <div class="row"><span class="grow">سعر ساعة الأوفر تايم</span><b>${+s.ot_rate ? `${money(s.ot_rate)} ج` : "مقفول"}</b></div>
     <div><button class="btn" data-act="setup-edit">عدّل</button></div></div>
-  ${isOwner() ? teamCard() : ""}`;
+  ${isOwner() ? teamCard() : ""}
+  ${isOwner() ? auditCard() : ""}`;
+}
+function auditCard() {
+  const fmt = t => String(t || "").slice(0, 16).replace("T", " ");
+  return `<div class="card stack"><h2>سجل العمليات</h2>
+    ${S.audit.length ? S.audit.slice(0, 40).map(a => `<div class="lrow"><div class="row"><div class="grow"><b>${esc(a.action || "")}</b> <span class="note">${esc(a.detail || "")}</span></div><span class="note num">${esc(fmt(a.created_at))}</span></div>${a.actor_name ? `<div class="note">${esc(a.actor_name)}</div>` : ""}</div>`).join("") : `<p class="note" style="margin:0">مفيش عمليات متسجلة لسه. أي تعديل مرتب أو صلاحية أو موافقة هيتسجّل هنا.</p>`}</div>`;
 }
 function teamCard() {
   const mem = S.people.filter(p => p.role !== "pending").sort((a, b) => (a.role === "owner" ? -1 : b.role === "owner" ? 1 : 0));
@@ -400,7 +457,7 @@ function teamCard() {
     ${mem.map(row).join("")}</div>`;
 }
 
-const STAFF_NAV = [["dash", "الرئيسية"], ["today", "اليوم"], ["month", "الشهر"], ["staff", "الموظفين"], ["leave", "إجازات"], ["money", "سلف وجزاءات"], ["payroll", "المرتبات"], ["announce", "إعلانات"], ["me", "حضوري"]];
+const STAFF_NAV = [["dash", "الرئيسية"], ["today", "اليوم"], ["month", "الشهر"], ["rota", "الشيفتات"], ["staff", "الموظفين"], ["leave", "إجازات"], ["money", "سلف وجزاءات"], ["payroll", "المرتبات"], ["announce", "إعلانات"], ["me", "حضوري"]];
 const _svg = p => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
 const ICONS = {
   dash: _svg('<rect x="3" y="3" width="7.5" height="9" rx="1.5"/><rect x="3" y="15" width="7.5" height="6" rx="1.5"/><rect x="13.5" y="3" width="7.5" height="6" rx="1.5"/><rect x="13.5" y="12" width="7.5" height="9" rx="1.5"/>'),
@@ -410,10 +467,11 @@ const ICONS = {
   money: _svg('<rect x="2.5" y="6" width="19" height="12" rx="2.5"/><circle cx="12" cy="12" r="2.6"/><path d="M6 10v4M18 10v4"/>'),
   payroll: _svg('<path d="M6 2.5h9l3.5 3.5V21a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1Z"/><path d="M14 2.5V6h3.5M12 10.5c-1.3 0-2 .6-2 1.4 0 1.9 4 1 4 2.8 0 .8-.7 1.4-2 1.4m0-5.6c1 0 1.7.3 2 .9m-2-.9V9.5m0 8.3v-1.2m-2 .1c.3.6 1 1 2 1"/>'),
   announce: _svg('<path d="M4 9.5v5a1 1 0 0 0 1 1h2.2l6.3 3.8a.6.6 0 0 0 .9-.5V5.2a.6.6 0 0 0-.9-.5L7.2 8.5H5a1 1 0 0 0-1 1Z"/><path d="M18 9a4 4 0 0 1 0 6"/>'),
+  rota: _svg('<rect x="3" y="4.5" width="18" height="16" rx="2.5"/><path d="M3 9.5h18M9 4.5v16M15 4.5v16"/>'),
   leave: _svg('<rect x="4" y="4.5" width="16" height="16" rx="2.5"/><path d="M8 2.5v4M16 2.5v4M4 9.5h16"/><path d="m9 14.5 2 2 4-4"/>'),
   me: _svg('<circle cx="12" cy="8" r="3.4"/><path d="M5.5 20a6.5 6.5 0 0 1 13 0"/>'),
 };
-const VIEWS = { dash: vDash, today: vToday, month: vMonth, staff: vStaff, leave: vLeave, money: vMoney, payroll: vPayroll, announce: vAnnounce, setup: vSetup, me: vMe };
+const VIEWS = { dash: vDash, today: vToday, month: vMonth, rota: vRota, staff: vStaff, leave: vLeave, money: vMoney, payroll: vPayroll, announce: vAnnounce, setup: vSetup, me: vMe };
 let raf = 0;
 function render() { cancelAnimationFrame(raf); raf = requestAnimationFrame(paint); }
 function paint() {
@@ -501,21 +559,26 @@ function cellDlg(emp, date) {
   }));
 }
 function moneyDlg(kind, id) {
-  const isAdv = kind === "adv", r = (isAdv ? S.adv : S.pen).find(x => String(x.id) === String(id)) || {};
+  const isAdv = kind === "adv", isPen = kind === "pen", isAllow = kind === "allow";
+  const src = isAdv ? S.adv : isPen ? S.pen : S.adj;
+  const r = src.find(x => String(x.id) === String(id)) || {};
   const date = r.entry_date || (S.month === TODAY.slice(0, 7) ? TODAY : S.month + "-01");
-  openDlg(`<h3>${id ? "تعديل" : "تسجيل"} ${isAdv ? "سلفة" : "جزاء"}</h3>
+  const title = isAdv ? "سلفة" : isPen ? "جزاء" : "بدل / حافز";
+  openDlg(`<h3>${id ? "تعديل" : "تسجيل"} ${title}</h3>
     <label for="m-emp">الموظف<select id="m-emp" name="user_id">${empOptions(r.user_id)}</select></label>
     <div class="two"><label for="m-date">التاريخ<input id="m-date" name="entry_date" type="date" dir="ltr" value="${esc(date)}"></label>
-    <label for="m-amount">${isAdv ? "مبلغ السلفة" : "قيمة الخصم"}<input id="m-amount" name="amount" type="number" min="0" step="any" inputmode="decimal" dir="ltr" value="${esc(r.amount ?? "")}"></label></div>
+    <label for="m-amount">${isAdv ? "مبلغ السلفة" : isPen ? "قيمة الخصم" : "القيمة"}<input id="m-amount" name="amount" type="number" min="0" step="any" inputmode="decimal" dir="ltr" value="${esc(r.amount ?? "")}"></label></div>
     ${isAdv ? `<label for="m-repaid">المسدد منها<input id="m-repaid" name="repaid" type="number" min="0" step="any" inputmode="decimal" dir="ltr" value="${esc(r.repaid ?? 0)}"></label>`
-      : `<label for="m-reason">السبب<input id="m-reason" name="reason" list="reasons" value="${esc(r.reason || "")}"><datalist id="reasons">${REASONS.map(x => `<option value="${x}">`).join("")}</datalist></label>`}
+      : isPen ? `<label for="m-reason">السبب<input id="m-reason" name="reason" list="reasons" value="${esc(r.reason || "")}"><datalist id="reasons">${REASONS.map(x => `<option value="${x}">`).join("")}</datalist></label>`
+      : `<label for="m-akind">النوع<select id="m-akind" name="akind"><option value="allowance" ${r.kind === "allowance" || !r.kind ? "selected" : ""}>بدل</option><option value="bonus" ${r.kind === "bonus" ? "selected" : ""}>حافز/مكافأة</option></select></label>`}
     <label for="m-note">ملاحظات<input id="m-note" name="note" value="${esc(r.note || "")}"></label>${foot("حفظ")}`,
     (fd, err) => {
       const row = { user_id: fd.get("user_id"), entry_date: fd.get("entry_date"), amount: +fd.get("amount") || 0, note: String(fd.get("note") || "").trim() };
       if (!row.user_id) return err("اختار الموظف."); if (!row.entry_date) return err("اختار التاريخ."); if (row.amount <= 0) return err("اكتب المبلغ.");
       if (isAdv) { row.repaid = +fd.get("repaid") || 0; if (row.repaid > row.amount) return err("المسدد أكبر من مبلغ السلفة."); }
-      else { row.reason = String(fd.get("reason") || "").trim(); if (!row.reason) return err("اكتب سبب الجزاء."); }
-      const t = sb.from(isAdv ? "advances" : "penalties");
+      else if (isPen) { row.reason = String(fd.get("reason") || "").trim(); if (!row.reason) return err("اكتب سبب الجزاء."); }
+      else { row.kind = fd.get("akind") || "allowance"; }
+      const t = sb.from(isAdv ? "advances" : isPen ? "penalties" : "adjustments");
       run(() => q(id ? t.update(row).eq("id", id) : t.insert(row)), "اتحفظ");
     });
 }
@@ -525,15 +588,17 @@ function setupDlg() {
     <div class="two"><label for="s-mi">دخول الصباحي<input id="s-mi" name="m_in" type="time" dir="ltr" value="${hm(s.m_in)}"></label><label for="s-mo">خروج الصباحي<input id="s-mo" name="m_out" type="time" dir="ltr" value="${hm(s.m_out)}"></label></div>
     <div class="two"><label for="s-ei">دخول المسائي<input id="s-ei" name="e_in" type="time" dir="ltr" value="${hm(s.e_in)}"></label><label for="s-eo">خروج المسائي<input id="s-eo" name="e_out" type="time" dir="ltr" value="${hm(s.e_out)}"></label></div>
     <div class="two"><label for="s-r">مسافة السماح (متر)<input id="s-r" name="radius_m" type="number" min="20" max="5000" dir="ltr" value="${esc(s.radius_m)}"></label><label for="s-g">سماح التأخير (دقيقة)<input id="s-g" name="grace_min" type="number" min="0" max="120" dir="ltr" value="${esc(s.grace_min)}"></label></div>
-    <div class="two"><label for="s-a">خصم أيام الغياب<select id="s-a" name="abs"><option value="0" ${s.absence_deduct ? "" : "selected"}>مقفول</option><option value="1" ${s.absence_deduct ? "selected" : ""}>شغّال</option></select></label><label for="s-d">المرتب ÷ كام يوم<input id="s-d" name="divisor" type="number" min="1" max="31" dir="ltr" value="${esc(s.divisor)}"></label></div>${foot("حفظ")}`,
+    <div class="two"><label for="s-a">خصم أيام الغياب<select id="s-a" name="abs"><option value="0" ${s.absence_deduct ? "" : "selected"}>مقفول</option><option value="1" ${s.absence_deduct ? "selected" : ""}>شغّال</option></select></label><label for="s-d">المرتب ÷ كام يوم<input id="s-d" name="divisor" type="number" min="1" max="31" dir="ltr" value="${esc(s.divisor)}"></label></div>
+    <label for="s-ot">سعر ساعة الأوفر تايم (جنيه) — حُطّ 0 لو مقفول<input id="s-ot" name="ot_rate" type="number" min="0" step="any" dir="ltr" value="${esc(s.ot_rate ?? 0)}"></label>${foot("حفظ")}`,
     (fd, err) => {
       const g = k => String(fd.get(k) || "");
       if (!["m_in", "m_out", "e_in", "e_out"].every(k => /^\d\d:\d\d/.test(g(k)))) return err("اكتب كل المواعيد.");
-      const radius = +g("radius_m"), grace = +g("grace_min"), div = +g("divisor");
+      const radius = +g("radius_m"), grace = +g("grace_min"), div = +g("divisor"), ot = +g("ot_rate") || 0;
       if (!(radius >= 20 && radius <= 5000)) return err("مسافة السماح من 20 لـ 5000 متر.");
       if (!(grace >= 0 && grace <= 120)) return err("سماح التأخير من 0 لـ 120 دقيقة.");
       if (!(div >= 1 && div <= 31)) return err("عدد الأيام من 1 لـ 31.");
-      run(() => q(sb.from("settings").update({ m_in: g("m_in"), m_out: g("m_out"), e_in: g("e_in"), e_out: g("e_out"), radius_m: radius, grace_min: grace, absence_deduct: g("abs") === "1", divisor: div }).eq("id", 1)), "اتحفظ");
+      if (ot < 0) return err("سعر الأوفر تايم لازم يكون موجب.");
+      run(() => q(sb.from("settings").update({ m_in: g("m_in"), m_out: g("m_out"), e_in: g("e_in"), e_out: g("e_out"), radius_m: radius, grace_min: grace, absence_deduct: g("abs") === "1", divisor: div, ot_rate: ot }).eq("id", 1)), "اتحفظ");
     });
 }
 
@@ -636,6 +701,8 @@ function payslipHTML(r) {
   <div class="psmeta"><div><span>الموظف</span><b>${esc(r.p.full_name || "—")}</b></div><div><span>الوظيفة</span><b>${esc(r.p.job || "—")}</b></div><div><span>رقم التليفون</span><b class="num">${esc(r.p.phone || "—")}</b></div></div>
   <table class="pstable"><tbody>
     ${line("المرتب الأساسي", money(r.salary) + " ج")}
+    ${r.otPay ? line(`أوفر تايم (${money(r.otHours)} ساعة)`, "+ " + money(r.otPay) + " ج", "pos") : ""}
+    ${r.allow ? line("بدلات وحوافز", "+ " + money(r.allow) + " ج", "pos") : ""}
     ${line("أيام الحضور", r.c.worked)}
     ${line("إجمالي الساعات", money(r.c.hours))}
     ${line("أيام الإجازة", r.c.off)}
@@ -655,6 +722,12 @@ function payslip(empId) {
   const r = payroll().find(x => x.p.id === empId); if (!r) return toast("مفيش بيانات مرتب للموظف ده الشهر ده.");
   printRoot(payslipHTML(r));
 }
+function closeMonth() {
+  const rows = payroll();
+  const T = rows.reduce((t, r) => ({ net: t.net + r.net, salary: t.salary + r.salary, ded: t.ded + r.ded }), { net: 0, salary: 0, ded: 0 });
+  openDlg(`<h3>قفل الشهر</h3><p style="margin:0">هتقفل <b>${monthLabel(S.month)}</b>. بعد القفل مينفعش تعدّل السلف/الجزاءات/البدلات للشهر ده إلا لما تفتحه تاني.<br>صافي المرتبات: <b class="num">${money(T.net)} ج</b> · عدد الموظفين: ${rows.length}.</p>${foot("اقفل الشهر", "danger")}`,
+    () => run(() => q(sb.from("month_close").insert({ month: S.month, net_total: T.net, salary_total: T.salary, ded_total: T.ded, headcount: rows.length, snapshot: rows.map(r => ({ name: r.p.full_name, net: r.net, salary: r.salary, ded: r.ded, ot: r.otPay, allow: r.allow })), closed_by: S.me.id })), "الشهر اتقفل"));
+}
 function printPayroll() {
   const rows = payroll(); if (!rows.length) return toast("مفيش بيانات.");
   const ad = S.settings.absence_deduct;
@@ -668,8 +741,8 @@ function printPayroll() {
 
 /* ---------- export ---------- */
 function sheet() {
-  const head = ["الموظف", "الوظيفة", "أيام الشغل", "صباحي", "مسائي", "إجازة", "غياب", "مرات التأخير", "دقايق التأخير", "الساعات", "المرتب", "خصم الغياب", "متبقي السلف", "عدد الجزاءات", "خصم الجزاءات", "إجمالي الخصومات", "الصافي"];
-  return [head, ...payroll().map(r => [r.p.full_name, r.p.job || "", r.c.worked, r.c.M, r.c.E, r.c.off, r.c.absent, r.c.lates, r.c.lateMin, Math.round(r.c.hours * 100) / 100, r.salary, r.absDed, r.advBal, r.penCount, r.penSum, r.ded, r.net])];
+  const head = ["الموظف", "الوظيفة", "أيام الشغل", "صباحي", "مسائي", "إجازة", "غياب", "مرات التأخير", "دقايق التأخير", "الساعات", "المرتب", "ساعات أوفر تايم", "أوفر تايم", "بدلات وحوافز", "خصم الغياب", "متبقي السلف", "عدد الجزاءات", "خصم الجزاءات", "إجمالي الخصومات", "الصافي"];
+  return [head, ...payroll().map(r => [r.p.full_name, r.p.job || "", r.c.worked, r.c.M, r.c.E, r.c.off, r.c.absent, r.c.lates, r.c.lateMin, Math.round(r.c.hours * 100) / 100, r.salary, r.otHours, r.otPay, r.allow, r.absDed, r.advBal, r.penCount, r.penSum, r.ded, r.net])];
 }
 
 /* ---------- actions ---------- */
@@ -710,11 +783,17 @@ document.addEventListener("click", async ev => {
   if (a === "leave-new") return leaveDlg();
   if (a === "leave-del") return confirmDlg("حذف الطلب", "الطلب هيتشال.", "احذف", () => q(sb.from("leave_requests").delete().eq("id", id)));
   if (!isStaff()) return;
+  if (a === "rota-cell") return rotaCycle(b.dataset.emp, b.dataset.date);
   if (a === "leave-ok") return run(() => q(sb.rpc("decide_leave", { p_id: id, p_status: "approved" })), "اتوافق عليها");
   if (a === "leave-no") return run(() => q(sb.rpc("decide_leave", { p_id: id, p_status: "rejected" })), "اترفضت");
   if (a === "print-pay") { if (!can("payroll")) return toast("مالكش صلاحية المرتبات."); return printPayroll(); }
   if ((a === "set-site" || a === "site-dlg" || a === "setup-edit") && !can("settings")) return toast("مالكش صلاحية إعدادات المطعم.");
-  if (/^(adv|pen)-/.test(a) && !can("money")) return toast("مالكش صلاحية السلف والجزاءات.");
+  if (/^(adv|pen|allow)-/.test(a) && !can("money")) return toast("مالكش صلاحية السلف والجزاءات والبدلات.");
+  if (a === "allow-new") return moneyDlg("allow");
+  if (a === "allow-edit") return moneyDlg("allow", id);
+  if (a === "allow-del") return confirmDlg("حذف بدل/حافز", "هيتشال ومش هيتحسب في المرتب.", "احذف", () => q(sb.from("adjustments").delete().eq("id", id)));
+  if (a === "month-close") { if (!can("payroll")) return toast("مالكش صلاحية المرتبات."); return closeMonth(); }
+  if (a === "month-open") { if (!can("payroll")) return toast("مالكش صلاحية المرتبات."); return confirmDlg("فتح الشهر", `هتفتح ${monthLabel(S.month)} وترجع تعدّل فيه. اللقطة المحفوظة هتتشال.`, "افتح", () => q(sb.from("month_close").delete().eq("month", S.month))); }
   if (a === "site-dlg") return siteDlg();
   if (a === "set-site") return setSite();
   if (a === "cell") return cellDlg(b.dataset.emp, b.dataset.date);
@@ -750,7 +829,7 @@ document.addEventListener("click", async ev => {
     navigator.serviceWorker.getRegistrations().then(rs => {
       rs.forEach(r => { if (r.active && /\/sw\.js/.test(r.active.scriptURL)) r.unregister(); });
     }).catch(() => {});
-    navigator.serviceWorker.register("sw-push.js?v=11").then(() => refreshPushState()).catch(() => {});
+    navigator.serviceWorker.register("sw-push.js?v=12").then(() => refreshPushState()).catch(() => {});
   }
   if (!CFG.SUPABASE_URL || !CFG.SUPABASE_KEY || !window.supabase) { render(); return; }
   sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_KEY);
