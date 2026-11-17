@@ -71,10 +71,20 @@ const I18N = {
   "إلغاء": "Cancel", "اكتب الاسم.": "Enter the name.", "تسجيل سلفة": "Add advance", "تسجيل جزاء": "Add penalty", "تسجيل بدل / حافز": "Add allowance / bonus",
   "موقع المطعم": "Restaurant location", "الفريق": "Team", "النهارده · ": "Today · ", "حضوري في": "My attendance",
 };
-const PREFIX = [
-  [/^حضوري في /, "My attendance · "], [/^جدول شيفتاتك · /, "Your shifts · "], [/^الحضور اليومي · /, "Daily attendance · "],
-  [/^أهلًا /, "Hello "], [/^مستندات /, "Documents · "], [/^صلاحيات الـ HR/, "HR permissions"],
-];
+const AR_RE = /[؀-ۿ]/;
+let _i18nKeys = null;
+function i18nKeys() {
+  if (_i18nKeys) return _i18nKeys;
+  Object.assign(I18N, window.FENJAN_I18N || {});
+  _i18nKeys = Object.keys(I18N).filter(k => k.length >= 3).sort((a, b) => b.length - a.length);
+  return _i18nKeys;
+}
+function tr(s) {
+  if (!s || !AR_RE.test(s)) return s;
+  const keys = i18nKeys();
+  for (const k of keys) { if (s.indexOf(k) !== -1) { s = s.split(k).join(I18N[k]); if (!AR_RE.test(s)) break; } }
+  return s;
+}
 function applyI18n() {
   const html = document.documentElement;
   html.setAttribute("lang", LANG); html.setAttribute("dir", EN() ? "ltr" : "rtl");
@@ -82,13 +92,9 @@ function applyI18n() {
   const root = document.body;
   const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
   const nodes = []; while (w.nextNode()) nodes.push(w.currentNode);
-  nodes.forEach(n => {
-    const raw = n.nodeValue, key = raw.trim(); if (!key) return;
-    if (I18N[key] != null) { n.nodeValue = raw.replace(key, I18N[key]); return; }
-    for (const [re, rep] of PREFIX) { if (re.test(key)) { n.nodeValue = raw.replace(re, rep); return; } }
-  });
-  root.querySelectorAll("[placeholder]").forEach(el => { const v = I18N[(el.getAttribute("placeholder") || "").trim()]; if (v != null) el.setAttribute("placeholder", v); });
-  root.querySelectorAll("[aria-label],[title]").forEach(el => { ["aria-label", "title"].forEach(a => { const g = el.getAttribute(a); if (g && I18N[g.trim()] != null) el.setAttribute(a, I18N[g.trim()]); }); });
+  nodes.forEach(n => { const s = tr(n.nodeValue); if (s !== n.nodeValue) n.nodeValue = s; });
+  root.querySelectorAll("[placeholder]").forEach(el => { const v = tr(el.getAttribute("placeholder")); if (v !== el.getAttribute("placeholder")) el.setAttribute("placeholder", v); });
+  root.querySelectorAll("[aria-label],[title]").forEach(el => { ["aria-label", "title"].forEach(a => { const g = el.getAttribute(a); if (g) { const v = tr(g); if (v !== g) el.setAttribute(a, v); } }); });
 }
 
 const pad = n => String(n).padStart(2, "0");
@@ -974,7 +980,7 @@ document.addEventListener("click", async ev => {
     navigator.serviceWorker.getRegistrations().then(rs => {
       rs.forEach(r => { if (r.active && /\/sw\.js(\?|$)/.test(r.active.scriptURL)) r.unregister(); });
     }).catch(() => {});
-    navigator.serviceWorker.register("sw-push.js?v=19").then(reg => {
+    navigator.serviceWorker.register("sw-push.js?v=20").then(reg => {
       refreshPushState();
       reg.update().catch(() => {});
       setInterval(() => reg.update().catch(() => {}), 36e5);
