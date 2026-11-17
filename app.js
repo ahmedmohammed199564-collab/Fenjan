@@ -680,8 +680,23 @@ const ICONS = {
   rota: _svg('<rect x="3" y="4.5" width="18" height="16" rx="2.5"/><path d="M3 9.5h18M9 4.5v16M15 4.5v16"/>'),
   leave: _svg('<rect x="4" y="4.5" width="16" height="16" rx="2.5"/><path d="M8 2.5v4M16 2.5v4M4 9.5h16"/><path d="m9 14.5 2 2 4-4"/>'),
   me: _svg('<circle cx="12" cy="8" r="3.4"/><path d="M5.5 20a6.5 6.5 0 0 1 13 0"/>'),
+  setup: _svg('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 7 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0-1.1-2.7H1a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 2.6 7a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H7a1.6 1.6 0 0 0 1-1.5V1a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 2.7 1.1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V7a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1Z"/>'),
+  more: _svg('<circle cx="5" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.6" fill="currentColor" stroke="none"/>'),
 };
-const VIEWS = { dash: vDash, ai: vAI, today: vToday, month: vMonth, rota: vRota, staff: vStaff, leave: vLeave, money: vMoney, payroll: vPayroll, announce: vAnnounce, setup: vSetup, me: vMe };
+const LABELS = Object.assign({}, Object.fromEntries(STAFF_NAV), { setup: "الإعدادات", more: "المزيد" });
+function navLayout() {
+  const allowed = STAFF_NAV.map(x => x[0]).filter(k => (k !== "money" || can("money")) && (k !== "payroll" || can("payroll")));
+  const order = ["dash", "ai", "staff", "payroll", "today"];
+  const main = order.filter(k => allowed.includes(k)).slice(0, 4);
+  const more = allowed.filter(k => !main.includes(k)).concat((can("settings") || isOwner()) ? ["setup"] : []);
+  return { allowed, main, more };
+}
+function vMore() {
+  const more = navLayout().more;
+  return `<h1>المزيد</h1>
+  <div class="stack">${more.map(k => `<a class="card row morerow" href="#${k}" style="text-decoration:none;color:inherit;align-items:center;gap:12px;padding:14px"><span class="ni" style="color:var(--accent);display:flex">${ICONS[k] || ""}</span><span class="grow" style="font-weight:600">${LABELS[k] || k}</span><span style="color:var(--muted);font-size:20px">‹</span></a>`).join("")}</div>`;
+}
+const VIEWS = { dash: vDash, ai: vAI, today: vToday, month: vMonth, rota: vRota, staff: vStaff, leave: vLeave, money: vMoney, payroll: vPayroll, announce: vAnnounce, setup: vSetup, me: vMe, more: vMore };
 let raf = 0;
 const langBtn = () => `<button class="iconbtn" data-act="lang" title="Language / اللغة">${EN() ? "عربي" : "EN"}</button>`;
 function render() { cancelAnimationFrame(raf); raf = requestAnimationFrame(paint); }
@@ -697,11 +712,15 @@ function paintBody() {
   $("#who").textContent = ROLES[S.me.role] || "";
   if (S.me.role === "pending" || !S.me.active) { main.innerHTML = S.me.active ? vPending() : `<div class="card stack auth"><h1>الحساب موقوف</h1><p>كلّم الإدارة.</p><div><button class="btn ghost" data-act="logout">خروج</button></div></div>`; return; }
   let v = location.hash.slice(1);
-  const navKeys = STAFF_NAV.map(x => x[0]).filter(k => (k !== "money" || can("money")) && (k !== "payroll" || can("payroll")));
-  const allowed = v === "setup" ? (can("settings") || isOwner()) : navKeys.includes(v);
-  if (!isStaff()) v = "me"; else if (!VIEWS[v] || !allowed) v = "dash";
+  const L = navLayout();
+  const valid = [...new Set([...L.allowed, ...L.more, "more"])];
+  if (!isStaff()) v = "me"; else if (!VIEWS[v] || !valid.includes(v)) v = "dash";
   S.view = v;
-  if (isStaff()) { nav.hidden = false; nav.innerHTML = STAFF_NAV.filter(([k]) => navKeys.includes(k)).map(([k, l]) => `<a href="#${k}" ${k === v ? `aria-current="page"` : ""}><span class="ni">${ICONS[k] || ""}</span><span class="nl">${l}</span></a>`).join(""); }
+  if (isStaff()) {
+    nav.hidden = false;
+    const item = k => `<a href="#${k}" ${((k === "more" && (v === "more" || L.more.includes(v))) || k === v) ? `aria-current="page"` : ""}><span class="ni">${ICONS[k] || ""}</span><span class="nl">${LABELS[k] || k}</span></a>`;
+    nav.innerHTML = L.main.map(item).join("") + item("more");
+  }
   const sc = $(".scroll"), sl = sc ? sc.scrollLeft : null;
   main.innerHTML = VIEWS[v]();
   if (sl !== null && $(".scroll")) $(".scroll").scrollLeft = sl;
@@ -1183,7 +1202,7 @@ document.addEventListener("click", async ev => {
     navigator.serviceWorker.getRegistrations().then(rs => {
       rs.forEach(r => { if (r.active && /\/sw\.js(\?|$)/.test(r.active.scriptURL)) r.unregister(); });
     }).catch(() => {});
-    navigator.serviceWorker.register("sw-push.js?v=28").then(reg => {
+    navigator.serviceWorker.register("sw-push.js?v=29").then(reg => {
       refreshPushState();
       reg.update().catch(() => {});
       setInterval(() => reg.update().catch(() => {}), 36e5);

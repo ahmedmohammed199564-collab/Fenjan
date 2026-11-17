@@ -339,6 +339,7 @@ window.FENJAN_I18N = {
   "الإجمالي": "Total",
   "، وحدد كل": ", and set each",
   " من ": " of ",
+  "المزيد": "More",
   "تسجيل البطاقة مطلوب": "ID card required",
   "📷 ارفع صورة البطاقة": "📷 Upload ID card photo",
   "📷 اختار صورة البطاقة": "📷 Choose ID card photo",
