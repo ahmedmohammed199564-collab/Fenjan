@@ -14,7 +14,7 @@ alter table public.settings add column if not exists alert_absent int not null d
 
 -- 3) تأكيد قراءة الإعلانات
 create table if not exists public.announcement_reads (
-  announcement_id uuid not null references public.announcements(id) on delete cascade,
+  announcement_id bigint not null references public.announcements(id) on delete cascade,
   user_id         uuid not null references public.profiles(id) on delete cascade,
   created_at      timestamptz not null default now(),
   primary key (announcement_id, user_id)
