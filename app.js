@@ -487,7 +487,7 @@ function paint() {
   nav.hidden = true; ha.innerHTML = "";
   if (!sb) { main.innerHTML = vSetupNeeded(); return; }
   if (!S.session) { main.innerHTML = vAuth(); return; }
-  ha.innerHTML = (can("settings") || isOwner() ? `<a class="iconbtn" href="#setup" style="text-decoration:none">الإعدادات</a>` : "") + `<button class="iconbtn" data-act="logout">خروج</button>`;
+  ha.innerHTML = `<button class="iconbtn" data-act="refresh" aria-label="تحديث" title="تحديث">${S.loading ? "⏳" : "↻"} تحديث</button>` + (can("settings") || isOwner() ? `<a class="iconbtn" href="#setup" style="text-decoration:none">الإعدادات</a>` : "") + `<button class="iconbtn" data-act="logout">خروج</button>`;
   if (S.loading) { main.innerHTML = skel(4); return; }
   if (!S.me) { main.innerHTML = `<div class="card stack auth"><h1>الحساب مش مكتمل</h1><p>دخلت، بس مفيش ملف موظف مربوط بالحساب ده. ده بيحصل لو الحساب اتعمل قبل تجهيز قاعدة البيانات.</p><div class="row"><button class="btn" data-act="refresh">جرّب تاني</button><button class="btn ghost" data-act="logout">خروج</button></div></div>`; return; }
   $("#who").textContent = ROLES[S.me.role] || "";
@@ -875,7 +875,7 @@ document.addEventListener("click", async ev => {
     navigator.serviceWorker.getRegistrations().then(rs => {
       rs.forEach(r => { if (r.active && /\/sw\.js/.test(r.active.scriptURL)) r.unregister(); });
     }).catch(() => {});
-    navigator.serviceWorker.register("sw-push.js?v=15").then(() => refreshPushState()).catch(() => {});
+    navigator.serviceWorker.register("sw-push.js?v=16").then(() => refreshPushState()).catch(() => {});
   }
   if (!CFG.SUPABASE_URL || !CFG.SUPABASE_KEY || !window.supabase) { render(); return; }
   sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_KEY);
