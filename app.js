@@ -100,7 +100,7 @@ function applyI18n() {
 const pad = n => String(n).padStart(2, "0");
 const cairoDate = (d = new Date()) => new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
 const TODAY = cairoDate();
-const S = { session: null, me: null, settings: null, people: [], att: [], adv: [], pen: [], ann: [], leave: [], adj: [], rota: [], closes: [], audit: [], reads: [], aiMsgs: [], aiBusy: false, month: TODAY.slice(0, 7), view: "", tab: "adv", authMode: "in", busy: false, loading: true, punchMsg: "", pushOn: false, pushBusy: false };
+const S = { session: null, me: null, settings: null, people: [], att: [], adv: [], pen: [], ann: [], leave: [], adj: [], rota: [], closes: [], audit: [], reads: [], ot: [], aiMsgs: [], aiBusy: false, month: TODAY.slice(0, 7), view: "", tab: "adv", authMode: "in", busy: false, loading: true, punchMsg: "", pushOn: false, pushBusy: false };
 let sb = null;
 const VAPID_PUBLIC = "BE9BrAMkVAFH_Yo8OfdjqxzQyVJmqLH3C__aDPTYuQObwHeOh4ymSms2r-Ufgd9rVpqUR2Mcs4eTQvM_7Z3QJe8";
 function urlB64ToU8(s) { const pad = "=".repeat((4 - s.length % 4) % 4); const b = atob((s + pad).replace(/-/g, "+").replace(/_/g, "/")); const a = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) a[i] = b.charCodeAt(i); return a; }
@@ -154,7 +154,17 @@ function avatar(name, size) {
 // شاشة تحميل أنيقة
 const skel = (n = 3) => `<div class="stack">${Array.from({ length: n }).map(() => `<div class="card skrow"><div class="sk sk-av"></div><div class="grow stack" style="gap:8px"><div class="sk" style="width:55%"></div><div class="sk" style="width:35%"></div></div></div>`).join("")}</div>`;
 const shiftHours = c => { const s = S.settings; if (!s) return 0; const a = c === "M" ? [s.m_in, s.m_out] : [s.e_in, s.e_out]; return ((tmin(a[1]) - tmin(a[0]) + 1440) % 1440) / 60; };
-const rowHours = r => r.status !== "present" ? 0 : (r.check_in && r.check_out) ? Math.max(0, (new Date(r.check_out) - new Date(r.check_in)) / 3600000) : (r.manual && r.shift ? shiftHours(r.shift) : 0);
+const SHIFT_H = () => +(S.settings && S.settings.shift_hours) || 9;
+const rowHours = r => {
+  if (r.status !== "present") return 0;
+  const sh = SHIFT_H();
+  if (r.check_in && r.check_out) return Math.min(sh, Math.max(0, (new Date(r.check_out) - new Date(r.check_in)) / 3600000));
+  if (r.check_in) { // no check-out → auto check-out
+    if (r.work_date < TODAY) return sh;                 // past day: assume full shift
+    return Math.min(sh, Math.max(0, (Date.now() - new Date(r.check_in)) / 3600000)); // today, still on shift
+  }
+  return r.manual ? sh : 0;
+};
 const person = id => S.people.find(p => p.id === id) || {};
 const workers = () => S.people.filter(p => p.role !== "pending" && p.active).sort((a, b) => String(a.full_name).localeCompare(String(b.full_name), "ar"));
 const toEmail = v => { v = String(v || "").trim(); return v.includes("@") ? v.toLowerCase() : v.replace(/\D/g, "") + "@" + (CFG.STAFF_EMAIL_DOMAIN || "fenjan-staff.com"); };
@@ -195,7 +205,7 @@ async function loadMonth() {
   const from = S.month + "-01", to = S.month + "-" + pad(daysIn(S.month));
   const mine = !isStaff();
   const scope = x => mine ? x.eq("user_id", S.me.id) : x;
-  const [people, att, adv, pen, ann, leave, adj, rota, closes, audit, reads] = await Promise.all([
+  const [people, att, adv, pen, ann, leave, adj, rota, closes, audit, reads, ot] = await Promise.all([
     isStaff() ? q(sb.from("profiles").select("*").order("full_name")) : Promise.resolve([S.me]),
     q(scope(sb.from("attendance").select("*").gte("work_date", from).lte("work_date", to))),
     q(scope(sb.from("advances").select("*").gte("entry_date", from).lte("entry_date", to)).order("entry_date", { ascending: false })),
@@ -207,8 +217,9 @@ async function loadMonth() {
     q(sb.from("month_close").select("*").order("month", { ascending: false }).limit(24)).catch(() => []),
     isOwner() ? q(sb.from("audit_log").select("*").order("created_at", { ascending: false }).limit(60)).catch(() => []) : Promise.resolve([]),
     q(sb.from("announcement_reads").select("announcement_id,user_id")).catch(() => []),
+    q(scope(sb.from("overtime_requests").select("*").gte("work_date", from).lte("work_date", to).order("work_date", { ascending: false }))).catch(() => []),
   ]);
-  Object.assign(S, { people, att, adv, pen, ann: ann || [], leave: leave || [], adj: adj || [], rota: rota || [], closes: closes || [], audit: audit || [], reads: reads || [] });
+  Object.assign(S, { people, att, adv, pen, ann: ann || [], leave: leave || [], adj: adj || [], rota: rota || [], closes: closes || [], audit: audit || [], reads: reads || [], ot: ot || [] });
 }
 async function refresh(silent) {
   if (!S.session) return;
@@ -230,9 +241,8 @@ function tally(uid) {
   return c;
 }
 function otHoursFor(uid) {
-  const rate = +S.settings.ot_rate || 0; if (!rate) return 0;
-  let h = 0; S.att.filter(r => r.user_id === uid && r.status === "present" && r.shift && r.check_in && r.check_out).forEach(r => { h += Math.max(0, rowHours(r) - shiftHours(r.shift)); });
-  return Math.round(h * 100) / 100;
+  // أوفر تايم = ساعات الطلبات الموافق عليها بس
+  return Math.round(S.ot.filter(o => o.user_id === uid && o.status === "approved").reduce((s, o) => s + (+o.hours || 0), 0) * 100) / 100;
 }
 function payroll() {
   const otRate = +S.settings.ot_rate || 0, s = S.settings, ar = s.auto_rules_on;
@@ -406,10 +416,15 @@ function leaveCard(l, staff) {
 }
 function vLeave() {
   const pend = S.leave.filter(l => l.status === "pending"), done = S.leave.filter(l => l.status !== "pending");
+  const otPend = S.ot.filter(o => o.status === "pending"), otDone = S.ot.filter(o => o.status !== "pending");
   return `<h1>الإجازات والطلبات</h1>
-    ${pend.length ? `<h2>طلبات مستنية (${pend.length})</h2><div class="stack">${pend.map(l => leaveCard(l, true)).join("")}</div>` : `<div class="card empty"><b>مفيش طلبات مستنية</b></div>`}
-    ${done.length ? `<h2>طلبات سابقة</h2><div class="stack">${done.slice(0, 40).map(l => leaveCard(l, true)).join("")}</div>` : ""}
-    <p class="note">لما توافق على إجازة، أيامها بتتسجّل تلقائيًا «إجازة» في الحضور (مش غياب).</p>`;
+    <h2>طلبات أوفر تايم${otPend.length ? ` مستنية (${otPend.length})` : ""}</h2>
+    ${otPend.length ? `<div class="stack">${otPend.map(o => otCard(o, true)).join("")}</div>` : `<div class="card empty">مفيش طلبات أوفر تايم مستنية</div>`}
+    ${otDone.length ? `<div class="stack" style="margin-top:8px">${otDone.slice(0, 20).map(o => otCard(o, true)).join("")}</div>` : ""}
+    <h2>الإجازات</h2>
+    ${pend.length ? `<div class="stack">${pend.map(l => leaveCard(l, true)).join("")}</div>` : `<div class="card empty"><b>مفيش طلبات إجازة مستنية</b></div>`}
+    ${done.length ? `<div class="stack" style="margin-top:8px">${done.slice(0, 30).map(l => leaveCard(l, true)).join("")}</div>` : ""}
+    <p class="note">الموافقة على الأوفر تايم بتضيف ساعاته للمرتب. الموافقة على الإجازة بتسجّل أيامها «إجازة» في الحضور.</p>`;
 }
 function leaveDlg() {
   openDlg(`<h3>طلب إجازة / غياب</h3>
@@ -422,6 +437,26 @@ function leaveDlg() {
       if (!a || !b) return err("اختار تاريخ البداية والنهاية.");
       if (b < a) return err("تاريخ النهاية قبل البداية.");
       run(() => q(sb.from("leave_requests").insert({ user_id: S.me.id, kind: fd.get("kind") || "leave", start_date: a, end_date: b, reason: String(fd.get("reason") || "").trim(), status: "pending" })), "الطلب اتبعت للإدارة");
+    });
+}
+/* ---------- overtime ---------- */
+const ostatus = s => s === "approved" ? `<span class="chip M">اتوافق عليها</span>` : s === "rejected" ? `<span class="chip A">اترفضت</span>` : `<span class="chip O">مستنية</span>`;
+function otCard(o, staff) {
+  const canDel = staff || (o.user_id === S.me.id && o.status === "pending");
+  return `<div class="card stack" style="gap:8px">
+    <div class="row">${staff ? avatar(person(o.user_id).full_name, 34) : ""}<div class="grow"><b>${staff ? esc(person(o.user_id).full_name || "—") : money(o.hours) + " ساعة"}</b> ${staff ? `<span class="note">· ${money(o.hours)} ساعة</span>` : ""}<div class="note num">يوم ${esc(o.work_date)}</div></div>${ostatus(o.status)}</div>
+    ${o.reason ? `<div class="note" style="white-space:pre-wrap">${esc(o.reason)}</div>` : ""}
+    ${staff && o.status === "pending" ? `<div class="row"><button class="btn small" data-act="ot-ok" data-id="${esc(o.id)}">موافقة</button><button class="btn ghost small" data-act="ot-no" data-id="${esc(o.id)}">رفض</button></div>` : canDel ? `<div class="row"><button class="btn ghost small" data-act="ot-del" data-id="${esc(o.id)}">حذف</button></div>` : ""}</div>`;
+}
+function otDlg() {
+  openDlg(`<h3>طلب أوفر تايم</h3>
+    <p class="note" style="margin:0">الشيفت ${money(SHIFT_H())} ساعات. اطلب الساعات الإضافية اللي اشتغلتها والمدير هيوافق.</p>
+    <div class="two"><label for="o-date">اليوم<input id="o-date" name="work_date" type="date" dir="ltr" value="${TODAY}"></label><label for="o-hours">عدد الساعات الإضافية<input id="o-hours" name="hours" type="number" min="0.5" step="0.5" dir="ltr" value="1"></label></div>
+    <label for="o-reason">السبب (اختياري)<textarea id="o-reason" name="reason" rows="2" placeholder="مثال: ضغط شغل آخر اليوم"></textarea></label>
+    ${foot("ابعت الطلب")}`,
+    (fd, err) => {
+      const h = +fd.get("hours") || 0; if (h <= 0) return err("اكتب عدد ساعات صحيح.");
+      run(() => q(sb.from("overtime_requests").insert({ user_id: S.me.id, work_date: fd.get("work_date") || TODAY, hours: h, reason: String(fd.get("reason") || "").trim(), status: "pending" })), "الطلب اتبعت للإدارة");
     });
 }
 function vMe() {
@@ -440,8 +475,9 @@ function vMe() {
     <div class="note">${S.punchMsg ? esc(S.punchMsg) : "لازم تكون جوه المطعم والموقع (GPS) شغال على موبايلك."}</div></div>` : ""}
   <div class="tiles"><div class="tile"><b class="num">${c.worked}</b><span>أيام شغل</span></div><div class="tile"><b class="num">${money(c.hours)}</b><span>ساعات</span></div><div class="tile O"><b class="num">${c.off}</b><span>إجازة</span></div><div class="tile A"><b class="num">${c.absent}</b><span>غياب</span></div><div class="tile"><b class="num">${c.lates}</b><span>مرات تأخير</span></div></div>
   <div class="row"><button class="btn ghost small" data-act="payslip" data-id="${esc(S.me.id)}">🧾 قسيمة راتبي (PDF)</button><button class="btn ghost small" data-act="docs" data-id="${esc(S.me.id)}">📁 مستنداتي</button></div>
-  <div class="row" style="margin-top:4px"><h2 class="grow">إجازاتي وطلباتي</h2><button class="btn small" data-act="leave-new">+ اطلب إجازة</button></div>
-  ${S.leave.length ? `<div class="stack">${S.leave.slice(0, 6).map(l => leaveCard(l, false)).join("")}</div>` : `<div class="card empty">مفيش طلبات لسه. اطلب إجازة من الزرار فوق.</div>`}
+  <div class="row" style="margin-top:4px"><h2 class="grow">إجازاتي وطلباتي</h2><button class="btn ghost small" data-act="ot-new">+ أوفر تايم</button><button class="btn small" data-act="leave-new">+ إجازة</button></div>
+  ${S.ot.length ? `<div class="stack">${S.ot.slice(0, 4).map(o => otCard(o, false)).join("")}</div>` : ""}
+  ${S.leave.length ? `<div class="stack">${S.leave.slice(0, 6).map(l => leaveCard(l, false)).join("")}</div>` : (!S.ot.length ? `<div class="card empty">مفيش طلبات لسه. اطلب إجازة أو أوفر تايم من فوق.</div>` : "")}
   ${(() => {
     const ms = S.rota.filter(r => r.user_id === S.me.id).sort((a, b) => a.work_date.localeCompare(b.work_date));
     const row = r => { const d = new Date(r.work_date + "T00:00:00"); const today = r.work_date === TODAY; return `<div class="row" style="padding:8px 0;border-bottom:1px solid var(--line)${today ? ";color:var(--accent);font-weight:700" : ""}"><span class="grow">${wdName(d.getDay())} ${esc(r.work_date.slice(8))}/${esc(r.work_date.slice(5, 7))}${today ? " · النهارده" : ""}</span><span class="chip ${r.shift === "off" ? "O" : r.shift}">${r.shift === "off" ? "إجازة" : SHIFT[r.shift]}</span></div>`; };
@@ -576,6 +612,7 @@ function vSetup() {
     <div class="row"><span class="chip E">مسائي</span><span class="num grow">${t12(s.e_in)} ← ${t12(s.e_out)}</span></div>
     <div class="row"><span class="grow">فترة السماح قبل ما يتحسب تأخير</span><b class="num">${s.grace_min} دقيقة</b></div>
     <div class="row"><span class="grow">خصم أيام الغياب من المرتب</span><b>${s.absence_deduct ? `شغّال (÷ ${s.divisor})` : "مقفول"}</b></div>
+    <div class="row"><span class="grow">عدد ساعات الشيفت</span><b>${money(s.shift_hours ?? 9)} ساعة</b></div>
     <div class="row"><span class="grow">سعر ساعة الأوفر تايم</span><b>${+s.ot_rate ? `${money(s.ot_rate)} ج` : "مقفول"}</b></div>
     <div class="row"><span class="grow">الخصم التلقائي (تأخير/غياب)</span><b>${s.auto_rules_on ? `شغّال` : "مقفول"}</b></div>
     <div><button class="btn" data-act="setup-edit">عدّل</button></div></div>
@@ -790,6 +827,7 @@ function setupDlg() {
     <div class="two"><label for="s-ei">دخول المسائي<input id="s-ei" name="e_in" type="time" dir="ltr" value="${hm(s.e_in)}"></label><label for="s-eo">خروج المسائي<input id="s-eo" name="e_out" type="time" dir="ltr" value="${hm(s.e_out)}"></label></div>
     <div class="two"><label for="s-r">مسافة السماح (متر)<input id="s-r" name="radius_m" type="number" min="20" max="5000" dir="ltr" value="${esc(s.radius_m)}"></label><label for="s-g">سماح التأخير (دقيقة)<input id="s-g" name="grace_min" type="number" min="0" max="120" dir="ltr" value="${esc(s.grace_min)}"></label></div>
     <div class="two"><label for="s-a">خصم أيام الغياب<select id="s-a" name="abs"><option value="0" ${s.absence_deduct ? "" : "selected"}>مقفول</option><option value="1" ${s.absence_deduct ? "selected" : ""}>شغّال</option></select></label><label for="s-d">المرتب ÷ كام يوم<input id="s-d" name="divisor" type="number" min="1" max="31" dir="ltr" value="${esc(s.divisor)}"></label></div>
+    <label for="s-sh">عدد ساعات الشيفت<input id="s-sh" name="shift_hours" type="number" min="1" max="24" step="0.5" dir="ltr" value="${esc(s.shift_hours ?? 9)}"></label>
     <label for="s-ot">سعر ساعة الأوفر تايم (جنيه) — حُطّ 0 لو مقفول<input id="s-ot" name="ot_rate" type="number" min="0" step="any" dir="ltr" value="${esc(s.ot_rate ?? 0)}"></label>
     <label class="chk" for="s-ar"><input type="checkbox" id="s-ar" name="auto_rules_on" ${s.auto_rules_on ? "checked" : ""}><span>تفعيل الخصم التلقائي للتأخير والغياب</span></label>
     <div class="two"><label for="s-lfr">مرات تأخير مسموحة/شهر<input id="s-lfr" name="late_free" type="number" min="0" dir="ltr" value="${esc(s.late_free ?? 0)}"></label><label for="s-lfe">خصم كل مرة تأخير زيادة (ج)<input id="s-lfe" name="late_fee" type="number" min="0" step="any" dir="ltr" value="${esc(s.late_fee ?? 0)}"></label></div>
@@ -798,12 +836,12 @@ function setupDlg() {
     (fd, err) => {
       const g = k => String(fd.get(k) || "");
       if (!["m_in", "m_out", "e_in", "e_out"].every(k => /^\d\d:\d\d/.test(g(k)))) return err("اكتب كل المواعيد.");
-      const radius = +g("radius_m"), grace = +g("grace_min"), div = +g("divisor"), ot = +g("ot_rate") || 0;
+      const radius = +g("radius_m"), grace = +g("grace_min"), div = +g("divisor"), ot = +g("ot_rate") || 0, shh = +g("shift_hours") || 9;
       if (!(radius >= 20 && radius <= 5000)) return err("مسافة السماح من 20 لـ 5000 متر.");
       if (!(grace >= 0 && grace <= 120)) return err("سماح التأخير من 0 لـ 120 دقيقة.");
       if (!(div >= 1 && div <= 31)) return err("عدد الأيام من 1 لـ 31.");
       if (ot < 0) return err("سعر الأوفر تايم لازم يكون موجب.");
-      run(() => q(sb.from("settings").update({ m_in: g("m_in"), m_out: g("m_out"), e_in: g("e_in"), e_out: g("e_out"), radius_m: radius, grace_min: grace, absence_deduct: g("abs") === "1", divisor: div, ot_rate: ot, auto_rules_on: g("auto_rules_on") === "on", late_free: +g("late_free") || 0, late_fee: +g("late_fee") || 0, absent_fee: +g("absent_fee") || 0, alert_late: +g("alert_late") || 3, alert_absent: +g("alert_absent") || 3 }).eq("id", 1)), "اتحفظ");
+      run(() => q(sb.from("settings").update({ m_in: g("m_in"), m_out: g("m_out"), e_in: g("e_in"), e_out: g("e_out"), radius_m: radius, grace_min: grace, absence_deduct: g("abs") === "1", divisor: div, ot_rate: ot, shift_hours: shh, auto_rules_on: g("auto_rules_on") === "on", late_free: +g("late_free") || 0, late_fee: +g("late_fee") || 0, absent_fee: +g("absent_fee") || 0, alert_late: +g("alert_late") || 3, alert_absent: +g("alert_absent") || 3 }).eq("id", 1)), "اتحفظ");
     });
 }
 
@@ -1042,7 +1080,11 @@ document.addEventListener("click", async ev => {
   if (a === "ann-read") { try { await q(sb.from("announcement_reads").insert({ announcement_id: id, user_id: S.me.id })); } catch (_) {} await refresh(true); return; }
   if (a === "leave-new") return leaveDlg();
   if (a === "leave-del") return confirmDlg("حذف الطلب", "الطلب هيتشال.", "احذف", () => q(sb.from("leave_requests").delete().eq("id", id)));
+  if (a === "ot-new") return otDlg();
+  if (a === "ot-del") return confirmDlg("حذف الطلب", "طلب الأوفر تايم هيتشال.", "احذف", () => q(sb.from("overtime_requests").delete().eq("id", id)));
   if (!isStaff()) return;
+  if (a === "ot-ok") return run(() => q(sb.rpc("decide_overtime", { p_id: id, p_status: "approved" })), "اتوافق عليها");
+  if (a === "ot-no") return run(() => q(sb.rpc("decide_overtime", { p_id: id, p_status: "rejected" })), "اترفضت");
   if (a === "rota-cell") return rotaCycle(b.dataset.emp, b.dataset.date);
   if (a === "leave-ok") return run(() => q(sb.rpc("decide_leave", { p_id: id, p_status: "approved" })), "اتوافق عليها");
   if (a === "leave-no") return run(() => q(sb.rpc("decide_leave", { p_id: id, p_status: "rejected" })), "اترفضت");
@@ -1110,7 +1152,7 @@ document.addEventListener("click", async ev => {
     navigator.serviceWorker.getRegistrations().then(rs => {
       rs.forEach(r => { if (r.active && /\/sw\.js(\?|$)/.test(r.active.scriptURL)) r.unregister(); });
     }).catch(() => {});
-    navigator.serviceWorker.register("sw-push.js?v=26").then(reg => {
+    navigator.serviceWorker.register("sw-push.js?v=27").then(reg => {
       refreshPushState();
       reg.update().catch(() => {});
       setInterval(() => reg.update().catch(() => {}), 36e5);
