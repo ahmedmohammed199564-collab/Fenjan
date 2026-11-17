@@ -1,13 +1,11 @@
-// فنجان — المساعد الذكي. Google Gemini مع إعادة محاولة + بدائل خفيفة.
+// فنجان — المساعد الذكي. Google Gemini (طلب واحد لكل سؤال للحفاظ على الحد المجاني).
 // السر المطلوب: GEMINI_API_KEY   (اختياري: GEMINI_MODEL)
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const URL = Deno.env.get("SUPABASE_URL")!;
 const ANON = Deno.env.get("SUPABASE_ANON_KEY")!;
 const KEY = Deno.env.get("GEMINI_API_KEY") || "";
-const PRIMARY = Deno.env.get("GEMINI_MODEL") || "gemini-3.8-flash";
-// الأساسي بيتجرّب كذا مرة، وبعدين بدائل أخف مرة واحدة لكل واحد
-const PLAN: [string, number][] = [[PRIMARY, 3], ["gemini-3.8-flash-lite", 1], ["gemini-flash-lite-latest", 1], ["gemini-pro-latest", 1]];
+const MODEL = Deno.env.get("GEMINI_MODEL") || "gemini-3.8-flash";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -16,27 +14,6 @@ const cors = {
 };
 const json = (o: unknown, status = 200) =>
   new Response(JSON.stringify(o), { status, headers: { ...cors, "Content-Type": "application/json" } });
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-async function once(model: string, prompt: string) {
-  const ctl = new AbortController();
-  const t = setTimeout(() => ctl.abort(), 10000);
-  try {
-    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${KEY}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.4, maxOutputTokens: 700 } }),
-      signal: ctl.signal,
-    });
-    const j = await r.json();
-    if (r.ok) { const a = j?.candidates?.[0]?.content?.parts?.[0]?.text?.trim(); return a ? { ok: true, a } : { busy: false, msg: "رد فاضي" }; }
-    const msg = (j?.error?.message || "").toLowerCase();
-    const busy = r.status === 429 || r.status === 503 || msg.includes("high demand") || msg.includes("overloaded") || msg.includes("try again");
-    return { ok: false, busy, msg: j?.error?.message || ("HTTP " + r.status) };
-  } catch (_) {
-    return { ok: false, busy: true, msg: "timeout" };
-  } finally { clearTimeout(t); }
-}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
@@ -52,15 +29,21 @@ Deno.serve(async (req) => {
   const sys = "انت مساعد إدارة ذكي لمطعم اسمه «فنجان». بتتكلم بالعربي المصري باختصار ووضوح وبتستخدم الأرقام اللي في البيانات. البيانات بتاعة شهر واحد وبالجنيه المصري. لو فيها إجابة اديها، ولو مفيهاش قول كده بوضوح.";
   const prompt = `${sys}\n\nالبيانات (JSON):\n${JSON.stringify(context).slice(0, 20000)}\n\nسؤال المدير: ${question}`;
 
-  let last = "";
-  for (const [model, tries] of PLAN) {
-    for (let i = 0; i < tries; i++) {
-      const res = await once(model, prompt);
-      if (res.ok) return json({ answer: res.a });
-      last = res.msg || "";
-      if (!res.busy) break;            // خطأ مش زحمة (موديل مرفوض مثلاً) → انتقل للبديل
-      if (i < tries - 1) await sleep(900 * (i + 1));
+  try {
+    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${KEY}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.4, maxOutputTokens: 700 } }),
+    });
+    const j = await r.json();
+    if (r.ok) {
+      const a = j?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+      return json(a ? { answer: a } : { error: "empty", detail: "رد فاضي، جرّب تاني." });
     }
+    const msg = (j?.error?.message || "").toLowerCase();
+    if (r.status === 429 || msg.includes("quota")) return json({ error: "quota", detail: "خلص الحد المجاني لـ Gemini. فعّل الفوترة (Billing) في Google AI Studio عشان يشتغل بثبات — الاستخدام البسيط بيفضل شبه مجاني." });
+    return json({ error: "ai_error", detail: (j?.error?.message || ("HTTP " + r.status)).slice(0, 300) });
+  } catch (e) {
+    return json({ error: "net", detail: String((e as Error)?.message || e) });
   }
-  return json({ error: "busy", detail: "Gemini المجاني مزحوم دلوقتي. جرّب كمان شوية — الإعداد سليم. (" + last.slice(0, 120) + ")" });
 });
