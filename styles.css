@@ -226,6 +226,12 @@ input[type=range]{accent-color:var(--accent);padding:0;background:transparent;bo
   .paysheet{max-width:none;margin:0;border-radius:0;padding:0;box-shadow:none}
 }
 
+/* AI assistant chat */
+#ai-chat{max-height:52vh;overflow-y:auto;gap:10px}
+.ai-bubble{max-width:85%;padding:10px 14px;border-radius:14px;line-height:1.6;white-space:normal;word-wrap:break-word}
+.ai-bubble.user{align-self:flex-start;background:linear-gradient(135deg,var(--accent),var(--accent2));color:var(--accent-ink);border-bottom-inline-start:4px solid transparent}
+.ai-bubble.ai{align-self:flex-end;background:color-mix(in srgb,var(--accent) 10%,var(--surface));border:1px solid var(--line)}
+
 [hidden]{display:none !important}
 .err:empty{display:none}
 .err{background:var(--a-bg);color:var(--a-ink);border-radius:10px;padding:10px 12px}

@@ -100,7 +100,7 @@ function applyI18n() {
 const pad = n => String(n).padStart(2, "0");
 const cairoDate = (d = new Date()) => new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
 const TODAY = cairoDate();
-const S = { session: null, me: null, settings: null, people: [], att: [], adv: [], pen: [], ann: [], leave: [], adj: [], rota: [], closes: [], audit: [], reads: [], month: TODAY.slice(0, 7), view: "", tab: "adv", authMode: "in", busy: false, loading: true, punchMsg: "", pushOn: false, pushBusy: false };
+const S = { session: null, me: null, settings: null, people: [], att: [], adv: [], pen: [], ann: [], leave: [], adj: [], rota: [], closes: [], audit: [], reads: [], aiMsgs: [], aiBusy: false, month: TODAY.slice(0, 7), view: "", tab: "adv", authMode: "in", busy: false, loading: true, punchMsg: "", pushOn: false, pushBusy: false };
 let sb = null;
 const VAPID_PUBLIC = "BE9BrAMkVAFH_Yo8OfdjqxzQyVJmqLH3C__aDPTYuQObwHeOh4ymSms2r-Ufgd9rVpqUR2Mcs4eTQvM_7Z3QJe8";
 function urlB64ToU8(s) { const pad = "=".repeat((4 - s.length % 4) % 4); const b = atob((s + pad).replace(/-/g, "+").replace(/_/g, "/")); const a = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) a[i] = b.charCodeAt(i); return a; }
@@ -253,6 +253,29 @@ function payroll() {
   });
 }
 
+/* ---------- AI assistant ---------- */
+function aiContext() {
+  const rows = payroll(), ws = workers();
+  let inn = 0, done = 0, absT = 0, none = 0;
+  ws.forEach(p => { const r = S.att.find(a => a.user_id === p.id && a.work_date === TODAY); if (!r) none++; else if (r.status === "present") { (r.check_in && !r.check_out) ? inn++ : done++; } else if (r.status === "absent") absT++; else none++; });
+  return {
+    month: S.month, today: TODAY,
+    settings: { radius_m: S.settings.radius_m, grace_min: S.settings.grace_min, ot_rate: S.settings.ot_rate, divisor: S.settings.divisor, absence_deduct: S.settings.absence_deduct },
+    today_status: { on_shift: inn, finished: done, absent: absT, not_in_yet: none },
+    employees: rows.map(r => ({ name: r.p.full_name, job: r.p.job, role: r.p.role, pay: r.daily ? "يومي" : "شهري", worked_days: r.c.worked, absent_days: r.c.absent, leave_days: r.c.off, late_times: r.c.lates, late_minutes: r.c.lateMin, hours: Math.round(r.c.hours), base: r.salary, overtime: r.otPay, allowances: r.allow, advances_balance: r.advBal, penalties: r.penSum, net: r.net })),
+    leave_requests: S.leave.map(l => ({ name: (person(l.user_id).full_name || ""), kind: l.kind, from: l.start_date, to: l.end_date, status: l.status })),
+  };
+}
+function vAI() {
+  const quick = ["مين أكتر واحد اتأخر الشهر ده؟", "لخّصلي حضور الشهر", "مين أعلى صافي مرتب؟", "مين غاب كتير؟", "إيه ملاحظاتك وتوصياتك؟"];
+  return `<div class="row"><h1 class="grow">المساعد الذكي 🤖</h1></div>
+  <div class="card stack" id="ai-chat">
+    ${S.aiMsgs.length ? S.aiMsgs.map(m => `<div class="ai-bubble ${m.role}">${esc(m.text).replace(/\n/g, "<br>")}</div>`).join("") : `<p class="note" style="margin:0">اسألني عن أي حاجة في الإدارة — حضور، مرتبات، تأخير، إجازات، توصيات. البيانات اللي بشوفها بتاعة شهر ${monthLabel(S.month)}.</p>`}
+    ${S.aiBusy ? `<div class="ai-bubble ai"><span class="sk" style="width:90px;height:12px;display:inline-block;border-radius:6px"></span></div>` : ""}
+  </div>
+  <div class="row"><input id="ai-q" placeholder="اكتب سؤالك..." style="flex:1" ${S.aiBusy ? "disabled" : ""}><button class="btn" data-act="ai-send" ${S.aiBusy ? "disabled" : ""}>اسأل</button></div>
+  <div class="row" style="flex-wrap:wrap;gap:6px">${quick.map(s => `<button class="btn ghost small" data-act="ai-quick" data-q="${esc(s)}">${esc(s)}</button>`).join("")}</div>`;
+}
 /* ---------- views ---------- */
 const monthBar = () => `<div class="monthbar"><button class="iconbtn" data-act="month" data-d="-1" aria-label="الشهر السابق">›</button><b>${monthLabel(S.month)}</b><button class="iconbtn" data-act="month" data-d="1" aria-label="الشهر التالي">‹</button></div>`;
 function vDash() {
@@ -576,10 +599,11 @@ function teamCard() {
     ${mem.map(row).join("")}</div>`;
 }
 
-const STAFF_NAV = [["dash", "الرئيسية"], ["today", "اليوم"], ["month", "الشهر"], ["rota", "الشيفتات"], ["staff", "الموظفين"], ["leave", "إجازات"], ["money", "سلف وجزاءات"], ["payroll", "المرتبات"], ["announce", "إعلانات"], ["me", "حضوري"]];
+const STAFF_NAV = [["dash", "الرئيسية"], ["ai", "المساعد"], ["today", "اليوم"], ["month", "الشهر"], ["rota", "الشيفتات"], ["staff", "الموظفين"], ["leave", "إجازات"], ["money", "سلف وجزاءات"], ["payroll", "المرتبات"], ["announce", "إعلانات"], ["me", "حضوري"]];
 const _svg = p => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
 const ICONS = {
   dash: _svg('<rect x="3" y="3" width="7.5" height="9" rx="1.5"/><rect x="3" y="15" width="7.5" height="6" rx="1.5"/><rect x="13.5" y="3" width="7.5" height="6" rx="1.5"/><rect x="13.5" y="12" width="7.5" height="9" rx="1.5"/>'),
+  ai: _svg('<rect x="4" y="7" width="16" height="12" rx="3"/><path d="M12 7V4M9 3.5h6"/><circle cx="9" cy="13" r="1.2" fill="currentColor" stroke="none"/><circle cx="15" cy="13" r="1.2" fill="currentColor" stroke="none"/><path d="M2 12v3M22 12v3"/>'),
   today: _svg('<rect x="3" y="4.5" width="18" height="16" rx="2.5"/><path d="M3 9h18M8 2.5v4M16 2.5v4"/><path d="m8.5 14.5 2 2 4-4"/>'),
   month: _svg('<rect x="3" y="4.5" width="18" height="16" rx="2.5"/><path d="M3 9h18M8 2.5v4M16 2.5v4M7.5 12.5h3M7.5 16h3M13.5 12.5h3M13.5 16h3"/>'),
   staff: _svg('<circle cx="9" cy="8" r="3.2"/><path d="M3.5 20a5.5 5.5 0 0 1 11 0"/><path d="M16 5.2a3 3 0 0 1 0 5.6M17.5 20a5 5 0 0 0-3-4.6"/>'),
@@ -590,7 +614,7 @@ const ICONS = {
   leave: _svg('<rect x="4" y="4.5" width="16" height="16" rx="2.5"/><path d="M8 2.5v4M16 2.5v4M4 9.5h16"/><path d="m9 14.5 2 2 4-4"/>'),
   me: _svg('<circle cx="12" cy="8" r="3.4"/><path d="M5.5 20a6.5 6.5 0 0 1 13 0"/>'),
 };
-const VIEWS = { dash: vDash, today: vToday, month: vMonth, rota: vRota, staff: vStaff, leave: vLeave, money: vMoney, payroll: vPayroll, announce: vAnnounce, setup: vSetup, me: vMe };
+const VIEWS = { dash: vDash, ai: vAI, today: vToday, month: vMonth, rota: vRota, staff: vStaff, leave: vLeave, money: vMoney, payroll: vPayroll, announce: vAnnounce, setup: vSetup, me: vMe };
 let raf = 0;
 const langBtn = () => `<button class="iconbtn" data-act="lang" title="Language / اللغة">${EN() ? "عربي" : "EN"}</button>`;
 function render() { cancelAnimationFrame(raf); raf = requestAnimationFrame(paint); }
@@ -1022,6 +1046,20 @@ document.addEventListener("click", async ev => {
   if (a === "rota-cell") return rotaCycle(b.dataset.emp, b.dataset.date);
   if (a === "leave-ok") return run(() => q(sb.rpc("decide_leave", { p_id: id, p_status: "approved" })), "اتوافق عليها");
   if (a === "leave-no") return run(() => q(sb.rpc("decide_leave", { p_id: id, p_status: "rejected" })), "اترفضت");
+  if (a === "ai-send" || a === "ai-quick") {
+    const q = a === "ai-quick" ? b.dataset.q : (($("#ai-q") && $("#ai-q").value) || "").trim();
+    if (!q || S.aiBusy) return;
+    S.aiMsgs.push({ role: "user", text: q }); S.aiBusy = true; render();
+    try {
+      const { data, error } = await sb.functions.invoke("ai-ask", { body: { question: q, context: aiContext() } });
+      if (error) S.aiMsgs.push({ role: "ai", text: "حصل خطأ في الاتصال بالمساعد: " + error.message });
+      else if (data && data.error) S.aiMsgs.push({ role: "ai", text: (data.detail || data.error) });
+      else S.aiMsgs.push({ role: "ai", text: data.answer || "مفيش رد." });
+    } catch (e) { S.aiMsgs.push({ role: "ai", text: say(e) }); }
+    S.aiBusy = false; render();
+    const c = $("#ai-chat"); if (c) c.scrollTop = c.scrollHeight;
+    return;
+  }
   if (a === "print-pay") { if (!can("payroll")) return toast("مالكش صلاحية المرتبات."); return printPayroll(); }
   if (a === "xlsx") { if (!can("payroll")) return toast("مالكش صلاحية المرتبات."); return exportExcel(); }
   if (a === "eos") { if (!can("payroll")) return toast("مالكش صلاحية المرتبات."); return eosDlg(id); }
@@ -1072,7 +1110,7 @@ document.addEventListener("click", async ev => {
     navigator.serviceWorker.getRegistrations().then(rs => {
       rs.forEach(r => { if (r.active && /\/sw\.js(\?|$)/.test(r.active.scriptURL)) r.unregister(); });
     }).catch(() => {});
-    navigator.serviceWorker.register("sw-push.js?v=23").then(reg => {
+    navigator.serviceWorker.register("sw-push.js?v=26").then(reg => {
       refreshPushState();
       reg.update().catch(() => {});
       setInterval(() => reg.update().catch(() => {}), 36e5);
