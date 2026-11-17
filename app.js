@@ -459,7 +459,37 @@ function otDlg() {
       run(() => q(sb.from("overtime_requests").insert({ user_id: S.me.id, work_date: fd.get("work_date") || TODAY, hours: h, reason: String(fd.get("reason") || "").trim(), status: "pending" })), "الطلب اتبعت للإدارة");
     });
 }
+function idCardRequired() {
+  return `<div class="card stack" style="text-align:center;padding:26px;align-items:center">
+    <div style="font-size:40px">🪪</div>
+    <h2 style="justify-content:center">تسجيل البطاقة مطلوب</h2>
+    <p class="note" style="margin:0">لازم ترفع صورة بطاقتك الشخصية الأول عشان تقدر تستخدم التطبيق وتسجّل حضورك.</p>
+    <div><button class="btn" data-act="idcard">📷 ارفع صورة البطاقة</button></div>
+  </div>`;
+}
+function idCardDlg() {
+  openDlg(`<h3>تسجيل البطاقة</h3>
+    <p class="note" style="margin:0">ارفع صورة واضحة لبطاقتك الشخصية. دي خطوة لازمة مرة واحدة بس.</p>
+    <label class="btn" style="text-align:center;cursor:pointer">📷 اختار صورة البطاقة<input type="file" id="idc-file" accept="image/*" hidden></label>
+    <div class="err" id="idc-err"></div>
+    <div class="row"><button class="btn ghost" type="button" data-close>بعدين</button></div>`);
+  const fi = $("#idc-file");
+  if (fi) fi.onchange = async () => {
+    const f = fi.files[0]; if (!f) return;
+    const er = $("#idc-err"); if (er) er.textContent = "";
+    if (f.size > 10 * 1024 * 1024) { if (er) er.textContent = "الصورة كبيرة (أقصى 10 ميجا)."; return; }
+    const path = `${S.me.id}/id_${Date.now()}_${f.name.replace(/[^\w.\-]+/g, "_")}`;
+    toast("بترفع…");
+    try {
+      const up = await sb.storage.from("docs").upload(path, f, { upsert: false }); if (up.error) throw up.error;
+      try { await q(sb.from("employee_docs").insert({ user_id: S.me.id, name: "صورة البطاقة", path, uploaded_by: S.me.id })); } catch (_) {}
+      await q(sb.rpc("set_my_id_card", { p_path: path }));
+      S.me.id_card = path; toast("البطاقة اترفعت ✅"); dlg.close(); await refresh(true);
+    } catch (e) { if (er) er.textContent = say(e); }
+  };
+}
 function vMe() {
+  if (!isStaff() && S.me && !S.me.id_card) return idCardRequired();
   const { open, today } = myToday();
   const c = tally(S.me.id);
   const done = today && today.check_in && today.check_out && !open;
@@ -534,7 +564,7 @@ function vMonth() {
 }
 function vStaff() {
   const pend = S.people.filter(p => p.role === "pending"), rest = S.people.filter(p => p.role !== "pending");
-  const card = p => `<div class="person"><div class="row">${avatar(p.full_name)}<div class="grow"><div class="pname">${esc(p.full_name || "بدون اسم")} ${p.id === S.me.id ? `<span class="tag">إنت</span>` : ""} ${p.role === "hr" ? `<span class="tag">HR</span>` : p.role === "owner" ? `<span class="tag">المالك</span>` : ""} ${p.active ? "" : `<span class="tag warn">موقوف</span>`}</div><div class="pjob">${esc(p.job || "—")} · <span class="num">${esc(p.phone || "")}</span></div></div>
+  const card = p => `<div class="person"><div class="row">${avatar(p.full_name)}<div class="grow"><div class="pname">${esc(p.full_name || "بدون اسم")} ${p.id === S.me.id ? `<span class="tag">إنت</span>` : ""} ${p.role === "hr" ? `<span class="tag">HR</span>` : p.role === "owner" ? `<span class="tag">المالك</span>` : ""} ${p.active ? "" : `<span class="tag warn">موقوف</span>`} ${p.role !== "pending" && p.role !== "owner" && !p.id_card ? `<span class="tag warn">بدون بطاقة</span>` : ""}</div><div class="pjob">${esc(p.job || "—")} · <span class="num">${esc(p.phone || "")}</span></div></div>
     ${p.role === "pending" || !can("payroll") ? "" : `<div style="text-align:end"><div class="money num">${money(p.pay_type === "daily" ? p.daily_rate : p.salary)}</div><div class="note">${p.pay_type === "daily" ? "جنيه / يوم" : "جنيه / شهر"}</div></div>`}</div>
     <div class="row">${p.role === "pending" ? (can("approve") ? `<button class="btn small" data-act="emp-edit" data-id="${esc(p.id)}">وافق وكمّل بياناته</button>` : `<span class="note">مستني موافقة صاحب المطعم</span>`) : `<button class="btn ghost small" data-act="emp-edit" data-id="${esc(p.id)}">تعديل</button><button class="btn ghost small" data-act="docs" data-id="${esc(p.id)}">مستندات</button>${can("payroll") ? `<button class="btn ghost small" data-act="eos" data-id="${esc(p.id)}">نهاية الخدمة</button>` : ""}`}</div></div>`;
   return `<div class="row"><h1 class="grow">الموظفين <span class="note num">(${rest.length})</span></h1><button class="iconbtn" data-act="refresh">حدّث</button></div>
@@ -1080,6 +1110,7 @@ document.addEventListener("click", async ev => {
   if (a === "ann-read") { try { await q(sb.from("announcement_reads").insert({ announcement_id: id, user_id: S.me.id })); } catch (_) {} await refresh(true); return; }
   if (a === "leave-new") return leaveDlg();
   if (a === "leave-del") return confirmDlg("حذف الطلب", "الطلب هيتشال.", "احذف", () => q(sb.from("leave_requests").delete().eq("id", id)));
+  if (a === "idcard") return idCardDlg();
   if (a === "ot-new") return otDlg();
   if (a === "ot-del") return confirmDlg("حذف الطلب", "طلب الأوفر تايم هيتشال.", "احذف", () => q(sb.from("overtime_requests").delete().eq("id", id)));
   if (!isStaff()) return;
@@ -1152,7 +1183,7 @@ document.addEventListener("click", async ev => {
     navigator.serviceWorker.getRegistrations().then(rs => {
       rs.forEach(r => { if (r.active && /\/sw\.js(\?|$)/.test(r.active.scriptURL)) r.unregister(); });
     }).catch(() => {});
-    navigator.serviceWorker.register("sw-push.js?v=27").then(reg => {
+    navigator.serviceWorker.register("sw-push.js?v=28").then(reg => {
       refreshPushState();
       reg.update().catch(() => {});
       setInterval(() => reg.update().catch(() => {}), 36e5);
