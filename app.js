@@ -869,13 +869,22 @@ document.addEventListener("click", async ev => {
 
 /* ---------- start ---------- */
 (async function start() {
-  // Clear any old caching worker, then register the push-only worker (no fetch handler → never serves stale code).
-  if (window.caches && caches.keys) caches.keys().then(ks => ks.forEach(k => caches.delete(k))).catch(() => {});
   if ("serviceWorker" in navigator && location.protocol === "https:") {
+    const hadController = !!navigator.serviceWorker.controller;
+    let reloaded = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (reloaded || !hadController) return; // only reload on a real update, not first install
+      reloaded = true; location.reload();
+    });
     navigator.serviceWorker.getRegistrations().then(rs => {
-      rs.forEach(r => { if (r.active && /\/sw\.js/.test(r.active.scriptURL)) r.unregister(); });
+      rs.forEach(r => { if (r.active && /\/sw\.js(\?|$)/.test(r.active.scriptURL)) r.unregister(); });
     }).catch(() => {});
-    navigator.serviceWorker.register("sw-push.js?v=16").then(() => refreshPushState()).catch(() => {});
+    navigator.serviceWorker.register("sw-push.js?v=17").then(reg => {
+      refreshPushState();
+      reg.update().catch(() => {});
+      setInterval(() => reg.update().catch(() => {}), 36e5);
+      document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") reg.update().catch(() => {}); });
+    }).catch(() => {});
   }
   if (!CFG.SUPABASE_URL || !CFG.SUPABASE_KEY || !window.supabase) { render(); return; }
   sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_KEY);

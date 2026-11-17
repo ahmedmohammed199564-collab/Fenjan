@@ -1,7 +1,35 @@
-// Push-only service worker for Fenjan. No fetch handler and no caching,
-// so it can never serve stale app code — it only receives push notifications.
+// Fenjan service worker: network-first (always fetches latest when online, so the
+// installed app icon auto-updates) + push notifications.
+const V = "v17";
+const CACHE = "fenjan-" + V;
+
 self.addEventListener("install", () => self.skipWaiting());
-self.addEventListener("activate", (e) => e.waitUntil(self.clients.claim()));
+self.addEventListener("activate", (e) => e.waitUntil((async () => {
+  const keys = await caches.keys();
+  await Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)));
+  await self.clients.claim();
+})()));
+
+// Network-first for same-origin GETs: always try the network so updates come down
+// immediately; fall back to cache only when offline.
+self.addEventListener("fetch", (e) => {
+  const req = e.request;
+  if (req.method !== "GET") return;
+  const url = new URL(req.url);
+  if (url.origin !== self.location.origin) return; // leave Supabase / CDN alone
+  e.respondWith((async () => {
+    try {
+      const fresh = await fetch(req, { cache: "no-store" });
+      if (fresh && fresh.ok) { const c = await caches.open(CACHE); c.put(req, fresh.clone()); }
+      return fresh;
+    } catch (err) {
+      const cached = await caches.match(req);
+      if (cached) return cached;
+      if (req.mode === "navigate") { const idx = await caches.match("./"); if (idx) return idx; }
+      throw err;
+    }
+  })());
+});
 
 self.addEventListener("push", (e) => {
   let d = {};
