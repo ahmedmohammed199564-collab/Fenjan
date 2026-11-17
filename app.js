@@ -513,7 +513,7 @@ function vPayroll() {
   <div class="scroll"><table><thead><tr><th>الموظف</th><th>أيام الشغل</th><th>إجازة</th><th>غياب</th><th>تأخير</th><th>ساعات</th><th>المرتب</th>${showOT ? "<th>أوفر</th>" : ""}${showAllow ? "<th>بدلات</th>" : ""}${ad ? "<th>خصم الغياب</th>" : ""}<th>متبقي السلف</th><th>الجزاءات</th>${showAuto ? "<th>خصم تلقائي</th>" : ""}<th>الصافي</th><th></th></tr></thead><tbody>
   ${rows.map(r => `<tr><td><b>${esc(r.p.full_name)}</b><div class="pjob">${esc(r.p.job || "")}</div></td><td class="num">${r.c.worked}</td><td class="num">${r.c.off}</td><td class="num">${r.c.absent ? `<span class="chip A">${r.c.absent}</span>` : 0}</td><td class="num">${r.c.lates ? `${r.c.lates} (${r.c.lateMin} د)` : 0}</td><td class="num">${money(r.c.hours)}</td><td class="num">${money(r.salary)}</td>${showOT ? `<td class="num pos">${r.otPay ? money(r.otPay) : "—"}</td>` : ""}${showAllow ? `<td class="num pos">${r.allow ? money(r.allow) : "—"}</td>` : ""}${ad ? `<td class="num">${money(r.absDed)}</td>` : ""}<td class="num">${money(r.advBal)}</td><td class="num">${money(r.penSum)}</td>${showAuto ? `<td class="num neg">${r.autoDed ? money(r.autoDed) : "—"}</td>` : ""}<td class="num money ${r.net < 0 ? "neg" : ""}">${money(r.net)}</td><td><button class="btn ghost small" data-act="payslip" data-id="${esc(r.p.id)}">قسيمة</button></td></tr>`).join("")}
   </tbody><tfoot><tr><td colspan="${cols - 2}">الإجمالي</td><td class="num money">${money(T.net)}</td><td></td></tr></tfoot></table></div>
-  <div class="row"><button class="btn" data-act="csv">نزّل الكشف (Excel)</button><button class="btn ghost" data-act="print-pay">🖨️ اطبع الكشف (PDF)</button><button class="btn ghost" data-act="copy">انسخ الكشف</button></div>
+  <div class="row"><button class="btn" data-act="xlsx">📊 نزّل ملخص الشهر (Excel)</button><button class="btn ghost" data-act="print-pay">🖨️ اطبع الكشف (PDF)</button><button class="btn ghost" data-act="copy">انسخ الكشف</button></div>
   <p class="note">الصافي = المرتب ${showOT ? "+ أوفر تايم " : ""}${showAllow ? "+ بدلات " : ""}${ad ? "− خصم الغياب " : ""}− المتبقي من سلف الشهر − جزاءات الشهر. ${showOT ? `ساعة الأوفر تايم = ${money(S.settings.ot_rate)} ج. ` : ""}${ad ? `خصم يوم الغياب = المرتب ÷ ${S.settings.divisor}. ` : ""}التأخير بيظهر للعلم ومش بيتخصم لوحده. الضرايب والتأمينات مش محسوبة هنا.</p>`;
 }
 function vSetup() {
@@ -874,6 +874,46 @@ function printPayroll() {
 }
 
 /* ---------- export ---------- */
+function loadXLSX() {
+  return new Promise(res => {
+    if (window.XLSX) return res();
+    const js = document.createElement("script"); js.src = "https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js";
+    js.onload = () => res(); js.onerror = () => res(); document.head.appendChild(js);
+  });
+}
+async function exportExcel() {
+  toast("بجهّز ملف Excel…");
+  await loadXLSX();
+  if (!window.XLSX) return toast("تعذّر تحميل أداة Excel — تأكد من الإنترنت.");
+  const X = window.XLSX, wb = X.utils.book_new();
+  const rows = payroll();
+  const T = rows.reduce((t, r) => ({ net: t.net + r.net, salary: t.salary + r.salary, ded: t.ded + r.ded, ot: t.ot + r.otPay, allow: t.allow + r.allow, hours: t.hours + r.c.hours, absent: t.absent + r.c.absent, worked: t.worked + r.c.worked }), { net: 0, salary: 0, ded: 0, ot: 0, allow: 0, hours: 0, absent: 0, worked: 0 });
+  const r2 = n => Math.round((+n || 0) * 100) / 100;
+  const add = (name, aoa) => X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet(aoa), name);
+  const nm = id => (person(id).full_name || "");
+  add("ملخص", [
+    ["مطعم فنجان — ملخص الشهر"], ["الشهر", monthLabel(S.month)], ["تاريخ التصدير", TODAY], [],
+    ["عدد الموظفين", rows.length], ["إجمالي أيام الحضور", T.worked], ["إجمالي أيام الغياب", T.absent],
+    ["إجمالي الساعات", r2(T.hours)], ["إجمالي المرتبات الأساسية", T.salary], ["إجمالي الأوفر تايم", r2(T.ot)],
+    ["إجمالي البدلات والحوافز", r2(T.allow)], ["إجمالي الخصومات", r2(T.ded)], ["صافي المرتبات", r2(T.net)],
+  ]);
+  add("المرتبات", sheet());
+  const stLbl = s => s === "present" ? "حاضر" : s === "absent" ? "غياب" : s === "off" ? "إجازة" : (s || "");
+  add("الحضور", [["التاريخ", "الموظف", "الحالة", "الشيفت", "دخول", "خروج", "تأخير (دقيقة)", "يدوي"]].concat(
+    [...S.att].sort((a, b) => (a.work_date + a.user_id).localeCompare(b.work_date + b.user_id)).map(r => [r.work_date, nm(r.user_id), stLbl(r.status), SHIFT[r.shift] || "", clock(r.check_in), clock(r.check_out), r.late_min || 0, r.manual ? "نعم" : ""])));
+  add("السلف", [["التاريخ", "الموظف", "المبلغ", "المسدد", "المتبقي", "ملاحظات"]].concat(
+    S.adv.map(a => [a.entry_date, nm(a.user_id), +a.amount || 0, +a.repaid || 0, (+a.amount || 0) - (+a.repaid || 0), a.note || ""])));
+  add("الجزاءات", [["التاريخ", "الموظف", "المبلغ", "السبب", "ملاحظات"]].concat(
+    S.pen.map(x => [x.entry_date, nm(x.user_id), +x.amount || 0, x.reason || "", x.note || ""])));
+  add("البدلات والحوافز", [["التاريخ", "الموظف", "النوع", "المبلغ", "ملاحظات"]].concat(
+    S.adj.map(x => [x.entry_date, nm(x.user_id), x.kind === "bonus" ? "حافز" : "بدل", +x.amount || 0, x.note || ""])));
+  add("الإجازات", [["الموظف", "النوع", "من", "إلى", "الحالة", "السبب"]].concat(
+    S.leave.map(l => [nm(l.user_id), LKIND[l.kind] || l.kind, l.start_date, l.end_date, l.status === "approved" ? "اتوافق" : l.status === "rejected" ? "اترفض" : "مستني", l.reason || ""])));
+  add("الشيفتات", [["التاريخ", "الموظف", "الشيفت"]].concat(
+    [...S.rota].sort((a, b) => (a.work_date + a.user_id).localeCompare(b.work_date + b.user_id)).map(r => [r.work_date, nm(r.user_id), r.shift === "off" ? "إجازة" : SHIFT[r.shift] || r.shift])));
+  X.writeFile(wb, `Fenjan_${S.month}.xlsx`);
+  toast("اتنزّل ملف Excel ✓");
+}
 function sheet() {
   const head = ["الموظف", "الوظيفة", "أيام الشغل", "صباحي", "مسائي", "إجازة", "غياب", "مرات التأخير", "دقايق التأخير", "الساعات", "المرتب", "ساعات أوفر تايم", "أوفر تايم", "بدلات وحوافز", "خصم الغياب", "خصم تلقائي", "متبقي السلف", "عدد الجزاءات", "خصم الجزاءات", "إجمالي الخصومات", "الصافي"];
   return [head, ...payroll().map(r => [r.p.full_name, r.p.job || "", r.c.worked, r.c.M, r.c.E, r.c.off, r.c.absent, r.c.lates, r.c.lateMin, Math.round(r.c.hours * 100) / 100, r.salary, r.otHours, r.otPay, r.allow, r.absDed, r.autoDed, r.advBal, r.penCount, r.penSum, r.ded, r.net])];
@@ -934,6 +974,7 @@ document.addEventListener("click", async ev => {
   if (a === "leave-ok") return run(() => q(sb.rpc("decide_leave", { p_id: id, p_status: "approved" })), "اتوافق عليها");
   if (a === "leave-no") return run(() => q(sb.rpc("decide_leave", { p_id: id, p_status: "rejected" })), "اترفضت");
   if (a === "print-pay") { if (!can("payroll")) return toast("مالكش صلاحية المرتبات."); return printPayroll(); }
+  if (a === "xlsx") { if (!can("payroll")) return toast("مالكش صلاحية المرتبات."); return exportExcel(); }
   if ((a === "set-site" || a === "site-dlg" || a === "setup-edit") && !can("settings")) return toast("مالكش صلاحية إعدادات المطعم.");
   if (/^(adv|pen|allow)-/.test(a) && !can("money")) return toast("مالكش صلاحية السلف والجزاءات والبدلات.");
   if (a === "allow-new") return moneyDlg("allow");
@@ -980,7 +1021,7 @@ document.addEventListener("click", async ev => {
     navigator.serviceWorker.getRegistrations().then(rs => {
       rs.forEach(r => { if (r.active && /\/sw\.js(\?|$)/.test(r.active.scriptURL)) r.unregister(); });
     }).catch(() => {});
-    navigator.serviceWorker.register("sw-push.js?v=20").then(reg => {
+    navigator.serviceWorker.register("sw-push.js?v=22").then(reg => {
       refreshPushState();
       reg.update().catch(() => {});
       setInterval(() => reg.update().catch(() => {}), 36e5);
