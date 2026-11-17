@@ -39,7 +39,7 @@ async function enablePush() {
   S.pushBusy = false; render();
 }
 function pushBtn() {
-  if (S.pushOn) return `<div class="row"><span class="tag">🔔 إشعارات الموبايل مفعّلة</span></div>`;
+  if (S.pushOn) return `<div class="card stack" style="gap:10px"><div class="row"><span class="tag grow">🔔 إشعارات الموبايل مفعّلة</span></div><div class="row" style="gap:8px;flex-wrap:wrap"><button class="btn ghost small" data-act="push-local">جرّب على جهازي</button>${isStaff() ? `<button class="btn ghost small" data-act="push-test">ابعت تجريبي للكل</button>` : ""}</div></div>`;
   return `<div class="card stack"><div class="row"><span class="grow">فعّل إشعارات الموبايل علشان توصلك الإعلانات حتى والتطبيق مقفول.</span><button class="btn" data-act="push-on" ${S.pushBusy ? "disabled" : ""}>${S.pushBusy ? "لحظة…" : "فعّل الإشعارات"}</button></div><p class="note">على الآيفون: لازم تضيف التطبيق للشاشة الرئيسية الأول، وبعدين تفعّل من هناك.</p></div>`;
 }
 
@@ -818,6 +818,17 @@ document.addEventListener("click", async ev => {
   if (a === "auth-in" || a === "auth-up") { S.authMode = a === "auth-up" ? "up" : "in"; return render(); }
   if (a === "auth-go") return doAuth();
   if (a === "push-on") return enablePush();
+  if (a === "push-local") { try { const reg = await navigator.serviceWorker.ready; await reg.showNotification("فنجان — تجربة", { body: "الإشعارات والصوت شغّالين ✅", icon: "icons/icon-192.png", badge: "icons/icon-192.png", dir: "rtl", lang: "ar", vibrate: [200, 100, 200], silent: false }); toast("لو مجاش الإشعار، راجع إعدادات الإشعارات في الموبايل."); } catch (e) { toast(say(e)); } return; }
+  if (a === "push-test") {
+    toast("بيبعت تجريبي…");
+    try {
+      const { data, error } = await sb.functions.invoke("send-push", { body: { body: "ده إشعار تجريبي من فنجان ✅" } });
+      if (error) { toast("خطأ في الدالة: " + error.message); }
+      else if (data && data.error) { toast("المشكلة: " + (data.note || data.error) + (data.detail ? " — " + data.detail : "")); }
+      else { toast(`النتيجة: وصل ${data.sent || 0} من ${data.total || 0}` + (data.failed ? ` · فشل ${data.failed}` : "") + (data.sample_error ? ` — خطأ: ${data.sample_error}` : "") + (data.note ? ` — ${data.note}` : "")); }
+    } catch (e) { toast(say(e)); }
+    return;
+  }
   if (a === "logout") { await sb.auth.signOut(); return; }
   if (a === "refresh") return refresh();
   if (a === "month") return setMonth(shiftMonth(S.month, +b.dataset.d));
@@ -879,7 +890,7 @@ document.addEventListener("click", async ev => {
     navigator.serviceWorker.getRegistrations().then(rs => {
       rs.forEach(r => { if (r.active && /\/sw\.js(\?|$)/.test(r.active.scriptURL)) r.unregister(); });
     }).catch(() => {});
-    navigator.serviceWorker.register("sw-push.js?v=17").then(reg => {
+    navigator.serviceWorker.register("sw-push.js?v=18").then(reg => {
       refreshPushState();
       reg.update().catch(() => {});
       setInterval(() => reg.update().catch(() => {}), 36e5);
