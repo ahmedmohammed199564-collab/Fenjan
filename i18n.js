@@ -338,6 +338,7 @@ window.FENJAN_I18N = {
   "الجزاءات": "Penalties",
   "الإجمالي": "Total",
   "، وحدد كل": ", and set each",
+  " من ": " of ",
   "لسه فاضي": "still empty",
   "في الشغل": "On shift",
   "عيّن مين": "assign who",
