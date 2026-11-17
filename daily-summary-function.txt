@@ -1,0 +1,64 @@
+// فنجان — ملخص اليوم: بيحسب حضور النهارده ويبعت إشعار لصاحب المطعم.
+// بيتنده من الجدولة (pg_cron) أو من التطبيق (زرار «ابعت ملخص النهارده»).
+// Supabase Edge Functions. الأسرار: VAPID_PUBLIC, VAPID_PRIVATE, VAPID_SUBJECT, CRON_SECRET
+import webpush from "npm:web-push@3.6.7";
+import { createClient } from "jsr:@supabase/supabase-js@2";
+
+const URL = Deno.env.get("SUPABASE_URL")!;
+const ANON = Deno.env.get("SUPABASE_ANON_KEY")!;
+const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const VPUB = Deno.env.get("VAPID_PUBLIC") || "";
+const VPRIV = Deno.env.get("VAPID_PRIVATE") || "";
+const VSUB = Deno.env.get("VAPID_SUBJECT") || "mailto:owner@fenjan.app";
+const CRON_SECRET = Deno.env.get("CRON_SECRET") || "";
+
+const cors = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, content-type, apikey, x-client-info, x-cron-secret",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+const json = (o: unknown, status = 200) =>
+  new Response(JSON.stringify(o), { status, headers: { ...cors, "Content-Type": "application/json" } });
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
+  if (!VPUB || !VPRIV) return json({ error: "missing_vapid" });
+  webpush.setVapidDetails(VSUB, VPUB, VPRIV);
+
+  // تصريح: سر الجدولة أو مستخدم إدارة
+  let ok = false;
+  const secret = req.headers.get("x-cron-secret");
+  if (CRON_SECRET && secret === CRON_SECRET) ok = true;
+  else {
+    const asUser = createClient(URL, ANON, { global: { headers: { Authorization: req.headers.get("Authorization") || "" } } });
+    const { data: staff } = await asUser.rpc("is_staff");
+    ok = !!staff;
+  }
+  if (!ok) return json({ error: "forbidden" });
+
+  const admin = createClient(URL, SERVICE);
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(new Date());
+  const { data: profs } = await admin.from("profiles").select("id, role, active");
+  const workers = (profs || []).filter((p: any) => p.active && p.role !== "pending");
+  const owners = (profs || []).filter((p: any) => p.role === "owner").map((p: any) => p.id);
+  const { data: att } = await admin.from("attendance").select("user_id, status, check_in, check_out, late_min").eq("work_date", today);
+  const rows = att || [];
+  let present = 0, done = 0, late = 0, absent = 0;
+  const seen = new Set<string>();
+  rows.forEach((r: any) => {
+    seen.add(r.user_id);
+    if (r.status === "present") { present++; if (r.check_out) done++; if (r.late_min > 0) late++; }
+    else if (r.status === "absent") absent++;
+  });
+  const notRec = Math.max(0, workers.length - seen.size);
+  const body = `ملخص ${today}: ${present} حاضر (منهم ${late} متأخر، ${done} خلصوا)، ${absent} غياب، ${notRec} لسه ما سجّلش.`;
+
+  const { data: subs } = await admin.from("push_subscriptions").select("endpoint, sub, user_id").in("user_id", owners.length ? owners : ["00000000-0000-0000-0000-000000000000"]);
+  const payload = JSON.stringify({ title: "فنجان — ملخص اليوم", body });
+  let sent = 0, failed = 0;
+  await Promise.all((subs || []).map(async (s: any) => {
+    try { await webpush.sendNotification(s.sub, payload); sent++; }
+    catch (e: any) { failed++; const c = e?.statusCode; if (c === 404 || c === 410) await admin.from("push_subscriptions").delete().eq("endpoint", s.endpoint); }
+  }));
+  return json({ ok: true, body, sent, failed });
+});

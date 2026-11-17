@@ -100,7 +100,7 @@ function applyI18n() {
 const pad = n => String(n).padStart(2, "0");
 const cairoDate = (d = new Date()) => new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
 const TODAY = cairoDate();
-const S = { session: null, me: null, settings: null, people: [], att: [], adv: [], pen: [], ann: [], leave: [], adj: [], rota: [], closes: [], audit: [], month: TODAY.slice(0, 7), view: "", tab: "adv", authMode: "in", busy: false, loading: true, punchMsg: "", pushOn: false, pushBusy: false };
+const S = { session: null, me: null, settings: null, people: [], att: [], adv: [], pen: [], ann: [], leave: [], adj: [], rota: [], closes: [], audit: [], reads: [], month: TODAY.slice(0, 7), view: "", tab: "adv", authMode: "in", busy: false, loading: true, punchMsg: "", pushOn: false, pushBusy: false };
 let sb = null;
 const VAPID_PUBLIC = "BE9BrAMkVAFH_Yo8OfdjqxzQyVJmqLH3C__aDPTYuQObwHeOh4ymSms2r-Ufgd9rVpqUR2Mcs4eTQvM_7Z3QJe8";
 function urlB64ToU8(s) { const pad = "=".repeat((4 - s.length % 4) % 4); const b = atob((s + pad).replace(/-/g, "+").replace(/_/g, "/")); const a = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) a[i] = b.charCodeAt(i); return a; }
@@ -195,7 +195,7 @@ async function loadMonth() {
   const from = S.month + "-01", to = S.month + "-" + pad(daysIn(S.month));
   const mine = !isStaff();
   const scope = x => mine ? x.eq("user_id", S.me.id) : x;
-  const [people, att, adv, pen, ann, leave, adj, rota, closes, audit] = await Promise.all([
+  const [people, att, adv, pen, ann, leave, adj, rota, closes, audit, reads] = await Promise.all([
     isStaff() ? q(sb.from("profiles").select("*").order("full_name")) : Promise.resolve([S.me]),
     q(scope(sb.from("attendance").select("*").gte("work_date", from).lte("work_date", to))),
     q(scope(sb.from("advances").select("*").gte("entry_date", from).lte("entry_date", to)).order("entry_date", { ascending: false })),
@@ -206,8 +206,9 @@ async function loadMonth() {
     q(scope(sb.from("shift_schedule").select("*").gte("work_date", from).lte("work_date", to))).catch(() => []),
     q(sb.from("month_close").select("*").order("month", { ascending: false }).limit(24)).catch(() => []),
     isOwner() ? q(sb.from("audit_log").select("*").order("created_at", { ascending: false }).limit(60)).catch(() => []) : Promise.resolve([]),
+    q(sb.from("announcement_reads").select("announcement_id,user_id")).catch(() => []),
   ]);
-  Object.assign(S, { people, att, adv, pen, ann: ann || [], leave: leave || [], adj: adj || [], rota: rota || [], closes: closes || [], audit: audit || [] });
+  Object.assign(S, { people, att, adv, pen, ann: ann || [], leave: leave || [], adj: adj || [], rota: rota || [], closes: closes || [], audit: audit || [], reads: reads || [] });
 }
 async function refresh(silent) {
   if (!S.session) return;
@@ -236,17 +237,19 @@ function otHoursFor(uid) {
 function payroll() {
   const otRate = +S.settings.ot_rate || 0, s = S.settings, ar = s.auto_rules_on;
   return workers().map(p => {
-    const c = tally(p.id), salary = +p.salary || 0;
+    const c = tally(p.id);
+    const daily = p.pay_type === "daily", rate = +p.daily_rate || 0, monthly = +p.salary || 0;
+    const salary = daily ? Math.round(c.worked * rate * 100) / 100 : monthly;
     const adv = S.adv.filter(a => a.user_id === p.id), pen = S.pen.filter(x => x.user_id === p.id), adj = S.adj.filter(x => x.user_id === p.id);
     const advBal = adv.reduce((s, a) => s + (+a.amount || 0) - (+a.repaid || 0), 0), penSum = pen.reduce((s, x) => s + (+x.amount || 0), 0);
     const allow = adj.reduce((s, x) => s + (+x.amount || 0), 0);
     const otHours = otHoursFor(p.id), otPay = Math.round(otHours * otRate * 100) / 100;
-    const absDed = s.absence_deduct ? Math.round(salary / (s.divisor || 30) * c.absent * 100) / 100 : 0;
+    const absDed = (!daily && s.absence_deduct) ? Math.round(monthly / (s.divisor || 30) * c.absent * 100) / 100 : 0;
     const lateFee = ar ? Math.max(0, c.lates - (+s.late_free || 0)) * (+s.late_fee || 0) : 0;
-    const absFee = ar ? c.absent * (+s.absent_fee || 0) : 0;
+    const absFee = (ar && !daily) ? c.absent * (+s.absent_fee || 0) : 0;
     const autoDed = Math.round((lateFee + absFee) * 100) / 100;
     const ded = absDed + advBal + penSum + autoDed;
-    return { p, c, salary, advBal, penCount: pen.length, penSum, allow, otHours, otPay, absDed, autoDed, lateFee, absFee, ded, net: salary + otPay + allow - ded };
+    return { p, c, daily, rate, salary, advBal, penCount: pen.length, penSum, allow, otHours, otPay, absDed, autoDed, lateFee, absFee, ded, net: salary + otPay + allow - ded };
   });
 }
 
@@ -276,7 +279,21 @@ function vDash() {
   const donut = (pct, label) => { const r = 34, c = 2 * Math.PI * r, dash = c * pct / 100; return `<svg viewBox="0 0 90 90" class="donut"><circle cx="45" cy="45" r="${r}" fill="none" stroke="var(--line)" stroke-width="10"/><circle cx="45" cy="45" r="${r}" fill="none" stroke="var(--accent)" stroke-width="10" stroke-linecap="round" stroke-dasharray="${dash.toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 45 45)"/><text x="45" y="42" text-anchor="middle" class="dn-n">${pct}%</text><text x="45" y="58" text-anchor="middle" class="dn-l">${label}</text></svg>`; };
   const payKPIs = can("payroll") ? `<div class="tile"><b class="num">${money(netTotal)}</b><span>صافي المرتبات (جنيه)</span></div>` : "";
   const moneyKPIs = can("money") ? `<div class="tile O"><b class="num">${money(advTotal)}</b><span>متبقي السلف</span></div><div class="tile A"><b class="num">${money(penTotal)}</b><span>الجزاءات</span></div>` : "";
+  // smart alerts
+  const aLate = +S.settings.alert_late || 3, aAbs = +S.settings.alert_absent || 3, alerts = [];
+  if (curM) ws.forEach(p => {
+    const t = tally(p.id), rs = [];
+    if (t.lates >= aLate) rs.push(`${t.lates} مرات تأخير`);
+    if (t.absent >= aAbs) rs.push(`${t.absent} أيام غياب`);
+    const sched = S.rota.find(r => r.user_id === p.id && r.work_date === TODAY && r.shift !== "off");
+    const todayRec = S.att.find(r => r.user_id === p.id && r.work_date === TODAY && r.status === "present");
+    if (sched && !todayRec) rs.push("مجدول النهارده ولسه مسجّلش");
+    if (rs.length) alerts.push({ p, rs });
+  });
+  const alertCard = alerts.length ? `<div class="card stack" style="border-inline-start:4px solid var(--a-ink)"><h2>⚠️ تنبيهات (${alerts.length})</h2>${alerts.map(x => `<div class="lrow"><div class="row" style="gap:10px">${avatar(x.p.full_name, 32)}<div class="grow"><b>${esc(x.p.full_name || "—")}</b><div class="note">${x.rs.join(" · ")}</div></div></div></div>`).join("")}</div>` : "";
   return `<div class="row"><h1 class="grow">لوحة التحكم</h1>${monthBar()}</div>
+  ${alertCard}
+  ${isOwner() && curM ? `<div class="row"><button class="btn ghost small" data-act="daily-now">📋 ابعت ملخص النهارده دلوقتي</button></div>` : ""}
   <div class="card" style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
     ${donut(rate, "حضور")}
     <div class="grow"><h2>النهارده</h2><div class="tiles" style="margin-top:8px">
@@ -333,8 +350,16 @@ function myToday() {
   return { open, today };
 }
 function annCards(canDelete) {
-  if (!S.ann.length) return canDelete ? "" : "";
-  return `<div class="stack">${S.ann.map(a => `<div class="card" style="border-inline-start:4px solid var(--accent)"><div class="row"><div class="grow" style="white-space:pre-wrap">${esc(a.body)}</div>${canDelete ? `<button class="btn ghost small" data-act="ann-del" data-id="${a.id}">حذف</button>` : ""}</div><div class="note" style="margin-top:6px">${esc(a.author || "الإدارة")} · ${esc(String(a.created_at || "").slice(0, 10))}</div></div>`).join("")}</div>`;
+  if (!S.ann.length) return "";
+  const total = workers().length;
+  return `<div class="stack">${S.ann.map(a => {
+    const reads = (S.reads || []).filter(r => r.announcement_id === a.id);
+    const n = new Set(reads.map(r => r.user_id)).size;
+    const mine = reads.some(r => r.user_id === S.me.id);
+    const foot = canDelete ? `<span class="tag">قرأها ${n} / ${total}</span>`
+      : (mine ? `<span class="tag">✓ قريتها</span>` : `<button class="btn small" data-act="ann-read" data-id="${esc(a.id)}">أكّد القراءة</button>`);
+    return `<div class="card" style="border-inline-start:4px solid var(--accent)"><div class="row"><div class="grow" style="white-space:pre-wrap">${esc(a.body)}</div>${canDelete ? `<button class="btn ghost small" data-act="ann-del" data-id="${esc(a.id)}">حذف</button>` : ""}</div><div class="row" style="margin-top:8px;justify-content:space-between;align-items:center;gap:8px"><span class="note">${esc(a.author || "الإدارة")} · ${esc(String(a.created_at || "").slice(0, 10))}</span>${foot}</div></div>`;
+  }).join("")}</div>`;
 }
 function vAnnounce() {
   return `<h1>إعلان لكل الموظفين</h1>
@@ -451,8 +476,8 @@ function vMonth() {
 function vStaff() {
   const pend = S.people.filter(p => p.role === "pending"), rest = S.people.filter(p => p.role !== "pending");
   const card = p => `<div class="person"><div class="row">${avatar(p.full_name)}<div class="grow"><div class="pname">${esc(p.full_name || "بدون اسم")} ${p.id === S.me.id ? `<span class="tag">إنت</span>` : ""} ${p.role === "hr" ? `<span class="tag">HR</span>` : p.role === "owner" ? `<span class="tag">المالك</span>` : ""} ${p.active ? "" : `<span class="tag warn">موقوف</span>`}</div><div class="pjob">${esc(p.job || "—")} · <span class="num">${esc(p.phone || "")}</span></div></div>
-    ${p.role === "pending" || !can("payroll") ? "" : `<div style="text-align:end"><div class="money num">${money(p.salary)}</div><div class="note">جنيه / شهر</div></div>`}</div>
-    <div class="row">${p.role === "pending" ? (can("approve") ? `<button class="btn small" data-act="emp-edit" data-id="${esc(p.id)}">وافق وكمّل بياناته</button>` : `<span class="note">مستني موافقة صاحب المطعم</span>`) : `<button class="btn ghost small" data-act="emp-edit" data-id="${esc(p.id)}">تعديل</button><button class="btn ghost small" data-act="docs" data-id="${esc(p.id)}">مستندات</button>`}</div></div>`;
+    ${p.role === "pending" || !can("payroll") ? "" : `<div style="text-align:end"><div class="money num">${money(p.pay_type === "daily" ? p.daily_rate : p.salary)}</div><div class="note">${p.pay_type === "daily" ? "جنيه / يوم" : "جنيه / شهر"}</div></div>`}</div>
+    <div class="row">${p.role === "pending" ? (can("approve") ? `<button class="btn small" data-act="emp-edit" data-id="${esc(p.id)}">وافق وكمّل بياناته</button>` : `<span class="note">مستني موافقة صاحب المطعم</span>`) : `<button class="btn ghost small" data-act="emp-edit" data-id="${esc(p.id)}">تعديل</button><button class="btn ghost small" data-act="docs" data-id="${esc(p.id)}">مستندات</button>${can("payroll") ? `<button class="btn ghost small" data-act="eos" data-id="${esc(p.id)}">نهاية الخدمة</button>` : ""}`}</div></div>`;
   return `<div class="row"><h1 class="grow">الموظفين <span class="note num">(${rest.length})</span></h1><button class="iconbtn" data-act="refresh">حدّث</button></div>
   ${pend.length ? `<h2>حسابات مستنية الموافقة</h2><div class="card">${pend.map(card).join("")}</div>` : ""}
   ${rest.length ? `<div class="card">${rest.map(card).join("")}</div>` : ""}
@@ -619,7 +644,10 @@ function empDlg(id) {
   openDlg(`<h3>${pend ? "موافقة على حساب" : "تعديل موظف"}</h3>
     <label for="e-name">الاسم<input id="e-name" name="full_name" value="${esc(p.full_name)}"></label>
     <div class="two"><label for="e-job">الوظيفة<input id="e-job" name="job" list="jobs" value="${esc(p.job)}"><datalist id="jobs">${JOBS.map(j => `<option value="${j}">`).join("")}</datalist></label>
-    ${showSalary ? `<label for="e-salary">المرتب الشهري<input id="e-salary" name="salary" type="number" min="0" step="any" inputmode="decimal" dir="ltr" value="${esc(p.salary)}"></label>` : `<div></div>`}</div>
+    <label for="e-hire">تاريخ التعيين<input id="e-hire" name="hire_date" type="date" dir="ltr" value="${esc(p.hire_date || "")}"></label></div>
+    ${showSalary ? `<div class="two"><label for="e-ptype">نوع الأجر<select id="e-ptype" name="pay_type"><option value="monthly" ${p.pay_type === "daily" ? "" : "selected"}>شهري</option><option value="daily" ${p.pay_type === "daily" ? "selected" : ""}>يومي</option></select></label>
+    <label for="e-salary" id="lbl-monthly" ${p.pay_type === "daily" ? "hidden" : ""}>المرتب الشهري<input id="e-salary" name="salary" type="number" min="0" step="any" dir="ltr" value="${esc(p.salary)}"></label>
+    <label for="e-drate" id="lbl-daily" ${p.pay_type === "daily" ? "" : "hidden"}>سعر اليوم (جنيه)<input id="e-drate" name="daily_rate" type="number" min="0" step="any" dir="ltr" value="${esc(p.daily_rate || 0)}"></label></div>` : ""}
     <div class="two"><label for="e-role">الصلاحية<select id="e-role" name="role" ${lockRole ? "disabled" : ""}>${lockRole ? `<option>${ROLES[p.role]}</option>` : roleOpts}</select></label>
     <label for="e-active">الحالة<select id="e-active" name="active"><option value="1" ${p.active ? "selected" : ""}>شغّال</option><option value="0" ${p.active ? "" : "selected"}>موقوف</option></select></label></div>
     ${permBox}
@@ -627,8 +655,8 @@ function empDlg(id) {
     (fd, err) => {
       const name = String(fd.get("full_name") || "").trim();
       if (!name) return err("اكتب الاسم.");
-      const patch = { full_name: name, job: String(fd.get("job") || "").trim(), active: fd.get("active") === "1" };
-      if (showSalary) { const salary = +fd.get("salary") || 0; if (salary < 0) return err("المرتب لازم يكون رقم موجب."); patch.salary = salary; }
+      const patch = { full_name: name, job: String(fd.get("job") || "").trim(), active: fd.get("active") === "1", hire_date: fd.get("hire_date") || null };
+      if (showSalary) { const salary = +fd.get("salary") || 0; if (salary < 0) return err("المرتب لازم يكون رقم موجب."); patch.salary = salary; patch.pay_type = fd.get("pay_type") || "monthly"; patch.daily_rate = +fd.get("daily_rate") || 0; }
       if (!lockRole) patch.role = fd.get("role") || "employee";
       if (owner && p.id !== S.me.id) PERMS.forEach(([k]) => patch["can_" + k] = fd.get("can_" + k) === "on");
       run(() => q(sb.from("profiles").update(patch).eq("id", id)), "اتحفظ");
@@ -636,6 +664,25 @@ function empDlg(id) {
   // أظهر/أخفي صندوق الصلاحيات حسب الدور المختار
   const rs = $("#e-role"), pb = $("#perm-box");
   if (rs && pb) rs.addEventListener("change", () => { pb.hidden = rs.value !== "hr"; });
+  const pt = $("#e-ptype");
+  if (pt) pt.addEventListener("change", () => { const d = pt.value === "daily"; const lm = $("#lbl-monthly"), ld = $("#lbl-daily"); if (lm) lm.hidden = d; if (ld) ld.hidden = !d; });
+}
+function eosDlg(empId) {
+  const p = person(empId);
+  const sal0 = p.pay_type === "daily" ? Math.round((+p.daily_rate || 0) * 26) : (+p.salary || 0);
+  openDlg(`<h3>نهاية الخدمة — ${esc(p.full_name || "")}</h3>
+    <div class="two"><label for="eo-from">تاريخ التعيين<input id="eo-from" type="date" dir="ltr" value="${esc(p.hire_date || "")}"></label><label for="eo-to">تاريخ ترك العمل<input id="eo-to" type="date" dir="ltr" value="${TODAY}"></label></div>
+    <div class="two"><label for="eo-sal">المرتب الشهري<input id="eo-sal" type="number" min="0" step="any" dir="ltr" value="${sal0}"></label><label for="eo-days">أيام مستحقة عن كل سنة<input id="eo-days" type="number" min="0" step="any" dir="ltr" value="21"></label></div>
+    <div class="card" id="eo-out" style="background:var(--accent-soft);border:0">—</div>
+    <div class="row"><button class="btn" type="button" id="eo-calc">احسب</button><button class="btn ghost" type="button" data-close>قفل</button></div>`);
+  const calc = () => {
+    const f = $("#eo-from").value, t = $("#eo-to").value, sal = +$("#eo-sal").value || 0, dpy = +$("#eo-days").value || 0;
+    if (!f || !t || t < f) { $("#eo-out").textContent = "اكتب تواريخ صحيحة."; return; }
+    const years = (new Date(t) - new Date(f)) / (365.25 * 864e5);
+    const gratuity = Math.round((sal / 30) * dpy * years);
+    $("#eo-out").innerHTML = `<div class="row"><span class="grow">مدة الخدمة</span><b>${years.toFixed(2)} سنة</b></div><div class="row"><span class="grow">المستحق التقريبي</span><b class="num">${money(gratuity)} ج</b></div><p class="note" style="margin:6px 0 0">= (المرتب ÷ 30) × ${dpy} يوم × سنوات الخدمة. تقديري — راجع قانون العمل.</p>`;
+  };
+  $("#eo-calc").onclick = calc; calc();
 }
 function docsDlg(empId) {
   const p = person(empId), staff = isStaff();
@@ -722,7 +769,8 @@ function setupDlg() {
     <label for="s-ot">سعر ساعة الأوفر تايم (جنيه) — حُطّ 0 لو مقفول<input id="s-ot" name="ot_rate" type="number" min="0" step="any" dir="ltr" value="${esc(s.ot_rate ?? 0)}"></label>
     <label class="chk" for="s-ar"><input type="checkbox" id="s-ar" name="auto_rules_on" ${s.auto_rules_on ? "checked" : ""}><span>تفعيل الخصم التلقائي للتأخير والغياب</span></label>
     <div class="two"><label for="s-lfr">مرات تأخير مسموحة/شهر<input id="s-lfr" name="late_free" type="number" min="0" dir="ltr" value="${esc(s.late_free ?? 0)}"></label><label for="s-lfe">خصم كل مرة تأخير زيادة (ج)<input id="s-lfe" name="late_fee" type="number" min="0" step="any" dir="ltr" value="${esc(s.late_fee ?? 0)}"></label></div>
-    <label for="s-afe">غرامة إضافية لكل يوم غياب (ج)<input id="s-afe" name="absent_fee" type="number" min="0" step="any" dir="ltr" value="${esc(s.absent_fee ?? 0)}"></label>${foot("حفظ")}`,
+    <label for="s-afe">غرامة إضافية لكل يوم غياب (ج)<input id="s-afe" name="absent_fee" type="number" min="0" step="any" dir="ltr" value="${esc(s.absent_fee ?? 0)}"></label>
+    <div class="two"><label for="s-al">تنبيه عند عدد مرات تأخير<input id="s-al" name="alert_late" type="number" min="1" dir="ltr" value="${esc(s.alert_late ?? 3)}"></label><label for="s-aa">تنبيه عند عدد أيام غياب<input id="s-aa" name="alert_absent" type="number" min="1" dir="ltr" value="${esc(s.alert_absent ?? 3)}"></label></div>${foot("حفظ")}`,
     (fd, err) => {
       const g = k => String(fd.get(k) || "");
       if (!["m_in", "m_out", "e_in", "e_out"].every(k => /^\d\d:\d\d/.test(g(k)))) return err("اكتب كل المواعيد.");
@@ -731,7 +779,7 @@ function setupDlg() {
       if (!(grace >= 0 && grace <= 120)) return err("سماح التأخير من 0 لـ 120 دقيقة.");
       if (!(div >= 1 && div <= 31)) return err("عدد الأيام من 1 لـ 31.");
       if (ot < 0) return err("سعر الأوفر تايم لازم يكون موجب.");
-      run(() => q(sb.from("settings").update({ m_in: g("m_in"), m_out: g("m_out"), e_in: g("e_in"), e_out: g("e_out"), radius_m: radius, grace_min: grace, absence_deduct: g("abs") === "1", divisor: div, ot_rate: ot, auto_rules_on: g("auto_rules_on") === "on", late_free: +g("late_free") || 0, late_fee: +g("late_fee") || 0, absent_fee: +g("absent_fee") || 0 }).eq("id", 1)), "اتحفظ");
+      run(() => q(sb.from("settings").update({ m_in: g("m_in"), m_out: g("m_out"), e_in: g("e_in"), e_out: g("e_out"), radius_m: radius, grace_min: grace, absence_deduct: g("abs") === "1", divisor: div, ot_rate: ot, auto_rules_on: g("auto_rules_on") === "on", late_free: +g("late_free") || 0, late_fee: +g("late_fee") || 0, absent_fee: +g("absent_fee") || 0, alert_late: +g("alert_late") || 3, alert_absent: +g("alert_absent") || 3 }).eq("id", 1)), "اتحفظ");
     });
 }
 
@@ -833,7 +881,7 @@ function payslipHTML(r) {
   return `<div class="pshead"><div class="pslogo">${CUP}</div><div><div class="psname">فنجان</div><div class="pssub">قسيمة راتب</div></div><div class="psmonth">${monthLabel(S.month)}</div></div>
   <div class="psmeta"><div><span>الموظف</span><b>${esc(r.p.full_name || "—")}</b></div><div><span>الوظيفة</span><b>${esc(r.p.job || "—")}</b></div><div><span>رقم التليفون</span><b class="num">${esc(r.p.phone || "—")}</b></div></div>
   <table class="pstable"><tbody>
-    ${line("المرتب الأساسي", money(r.salary) + " ج")}
+    ${line(r.daily ? `الأجر اليومي (${money(r.rate)} × ${r.c.worked} يوم)` : "المرتب الأساسي", money(r.salary) + " ج")}
     ${r.otPay ? line(`أوفر تايم (${money(r.otHours)} ساعة)`, "+ " + money(r.otPay) + " ج", "pos") : ""}
     ${r.allow ? line("بدلات وحوافز", "+ " + money(r.allow) + " ج", "pos") : ""}
     ${line("أيام الحضور", r.c.worked)}
@@ -967,6 +1015,7 @@ document.addEventListener("click", async ev => {
   if (a === "punch") return punch();
   if (a === "payslip") { if (!isStaff() && id !== S.me.id) return; return payslip(id || S.me.id); }
   if (a === "docs") { if (!isStaff() && id !== S.me.id) return; return docsDlg(id || S.me.id); }
+  if (a === "ann-read") { try { await q(sb.from("announcement_reads").insert({ announcement_id: id, user_id: S.me.id })); } catch (_) {} await refresh(true); return; }
   if (a === "leave-new") return leaveDlg();
   if (a === "leave-del") return confirmDlg("حذف الطلب", "الطلب هيتشال.", "احذف", () => q(sb.from("leave_requests").delete().eq("id", id)));
   if (!isStaff()) return;
@@ -975,6 +1024,8 @@ document.addEventListener("click", async ev => {
   if (a === "leave-no") return run(() => q(sb.rpc("decide_leave", { p_id: id, p_status: "rejected" })), "اترفضت");
   if (a === "print-pay") { if (!can("payroll")) return toast("مالكش صلاحية المرتبات."); return printPayroll(); }
   if (a === "xlsx") { if (!can("payroll")) return toast("مالكش صلاحية المرتبات."); return exportExcel(); }
+  if (a === "eos") { if (!can("payroll")) return toast("مالكش صلاحية المرتبات."); return eosDlg(id); }
+  if (a === "daily-now") { if (!isOwner()) return; toast("بيبعت الملخص…"); try { const { data, error } = await sb.functions.invoke("daily-summary", { body: {} }); if (error) toast("خطأ: " + error.message); else if (data && data.error) toast("المشكلة: " + data.error); else toast(data.body ? data.body : ("اتبعت لـ " + (data.sent || 0))); } catch (e) { toast(say(e)); } return; }
   if ((a === "set-site" || a === "site-dlg" || a === "setup-edit") && !can("settings")) return toast("مالكش صلاحية إعدادات المطعم.");
   if (/^(adv|pen|allow)-/.test(a) && !can("money")) return toast("مالكش صلاحية السلف والجزاءات والبدلات.");
   if (a === "allow-new") return moneyDlg("allow");
@@ -1021,7 +1072,7 @@ document.addEventListener("click", async ev => {
     navigator.serviceWorker.getRegistrations().then(rs => {
       rs.forEach(r => { if (r.active && /\/sw\.js(\?|$)/.test(r.active.scriptURL)) r.unregister(); });
     }).catch(() => {});
-    navigator.serviceWorker.register("sw-push.js?v=22").then(reg => {
+    navigator.serviceWorker.register("sw-push.js?v=23").then(reg => {
       refreshPushState();
       reg.update().catch(() => {});
       setInterval(() => reg.update().catch(() => {}), 36e5);
