@@ -11,6 +11,86 @@ const REASONS = ["تأخير", "غياب بدون إذن", "انصراف قبل 
 const ROLES = { pending: "مستني موافقة", employee: "موظف", hr: "HR", owner: "صاحب المطعم" };
 const SHIFT = { M: "صباحي", E: "مسائي" };
 
+/* ---------- i18n (عربي / English) ---------- */
+let LANG = (typeof localStorage !== "undefined" && localStorage.getItem("fenjan_lang") === "en") ? "en" : "ar";
+const EN = () => LANG === "en";
+const MON_EN = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const WD_EN = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+const wdName = i => (EN() ? WD_EN : WD)[i];
+const I18N = {
+  // nav + header
+  "الرئيسية": "Home", "اليوم": "Today", "الشهر": "Month", "الشيفتات": "Shifts", "الموظفين": "Staff", "إجازات": "Leave", "سلف وجزاءات": "Money", "المرتبات": "Payroll", "إعلانات": "Announcements", "حضوري": "Me",
+  "تحديث": "Refresh", "الإعدادات": "Settings", "خروج": "Logout", "شؤون الموظفين": "HR System",
+  // auth
+  "دخول": "Login", "حساب جديد": "Sign up", "تسجيل الدخول": "Login", "رقم التليفون": "Phone number", "كلمة السر": "Password", "ادخل": "Enter", "نظام شؤون الموظفين": "HR System", "الاسم بالكامل": "Full name",
+  "أول حساب يتعمل بيبقى صاحب المطعم. أي حساب بعده لازم الإدارة توافق عليه.": "The first account becomes the owner. Any later account needs management approval.",
+  "أول مرة تستخدم التطبيق؟ دوس «حساب جديد» فوق. الدخول ده للي عمل حساب قبل كده.": "First time? Tap \"Sign up\" above. Login is for existing accounts.",
+  // common buttons / words
+  "حفظ": "Save", "تعديل": "Edit", "حذف": "Delete", "عدّل": "Edit", "قفل": "Close", "موافقة": "Approve", "رفض": "Reject", "تمام": "OK", "جرّب تاني": "Try again", "انسخ الكشف": "Copy", "مستندات": "Documents", "قسيمة": "Payslip",
+  "إنت": "You", "المالك": "Owner", "جنيه / شهر": "EGP / month", "مستني موافقة صاحب المطعم": "Awaiting owner approval",
+  // roles / shifts / leave kinds / status
+  "صاحب المطعم": "Owner", "موظف": "Employee", "مستني موافقة": "Pending approval",
+  "صباحي": "Morning", "مسائي": "Evening", "إجازة": "Leave", "إجازة مرضي": "Sick leave", "إبلاغ غياب": "Absence notice",
+  "شغّال": "Active", "موقوف": "Suspended", "مقفول": "Off",
+  // dashboard
+  "لوحة التحكم": "Dashboard", "النهارده": "Today", "في الشغل": "On shift", "خلصوا": "Done", "غياب": "Absent", "لسه": "Not yet", "حضور": "Present",
+  "عدد الموظفين": "Staff count", "أيام حضور بالشهر": "Present days", "إجمالي الساعات": "Total hours", "مرات تأخير": "Late times",
+  "صافي المرتبات (جنيه)": "Net payroll (EGP)", "أوفر تايم": "Overtime", "بدلات وحوافز": "Allowances & bonuses",
+  "أكتر الموظفين تأخيرًا": "Most late employees", "مفيش تأخير متسجل الشهر ده 👏": "No lateness recorded this month 👏",
+  "أرشيف الشهور المقفولة": "Closed months archive", "مقارنة صافي المرتبات بين الشهور المقفولة.": "Net payroll comparison across closed months.",
+  // today
+  "حضور النهارده": "Today's attendance", "حدّث": "Refresh",
+  // staff
+  "وافق وكمّل بياناته": "Approve & fill details",
+  // leave
+  "الإجازات والطلبات": "Leave & requests", "طلبات سابقة": "Past requests", "إجازاتي وطلباتي": "My leave & requests", "اطلب إجازة": "Request leave", "+ اطلب إجازة": "+ Request leave",
+  "مستنية": "Pending", "اتوافق عليها": "Approved", "اترفضت": "Rejected", "من": "From", "إلى": "To", "السبب (اختياري)": "Reason (optional)", "ابعت الطلب": "Send request",
+  "طلب إجازة / غياب": "Leave / absence request", "النوع": "Type",
+  "مفيش طلبات مستنية": "No pending requests", "لما توافق على إجازة، أيامها بتتسجّل تلقائيًا «إجازة» في الحضور (مش غياب).": "When you approve leave, its days are auto-marked as leave in attendance (not absence).",
+  "مفيش طلبات لسه. اطلب إجازة من الزرار فوق.": "No requests yet. Request leave from the button above.",
+  // me
+  "🧾 قسيمة راتبي (PDF)": "🧾 My payslip (PDF)", "📁 مستنداتي": "📁 My documents",
+  "فعّل الإشعارات": "Enable notifications", "جرّب على جهازي": "Test on my device", "ابعت تجريبي للكل": "Send test to all",
+  "فعّل إشعارات الموبايل علشان توصلك الإعلانات حتى والتطبيق مقفول.": "Enable mobile notifications so announcements reach you even when the app is closed.",
+  // rota
+  "جدول الشيفتات": "Shift schedule",
+  // announcements
+  "اكتب الإعلان": "Write the announcement", "ابعت لكل الموظفين": "Send to all staff",
+  // payroll table headers
+  "الموظف": "Employee", "أيام الشغل": "Work days", "تأخير": "Late", "ساعات": "Hours", "المرتب": "Salary", "أوفر": "OT", "بدلات": "Allow.", "خصم الغياب": "Absence ded.", "متبقي السلف": "Advance bal.", "الجزاءات": "Penalties", "خصم تلقائي": "Auto ded.", "الصافي": "Net", "الإجمالي": "Total",
+  "نزّل الكشف (Excel)": "Download (Excel)", "🖨️ اطبع الكشف (PDF)": "🖨️ Print (PDF)", "🖨️ اقفل الشهر": "🔒 Close month", "افتح الشهر": "Reopen month",
+  // money
+  "السلف": "Advances", "بدلات وحوافز": "Allowances", "التاريخ": "Date", "السلفة": "Advance", "المسدد": "Repaid", "المتبقي": "Remaining", "ملاحظات": "Notes", "السبب": "Reason", "القيمة": "Amount", "الخصم": "Deduction",
+  "سجّل سلفة": "Add advance", "سجّل جزاء": "Add penalty", "سجّل بدل/حافز": "Add allowance/bonus", "سلف وجزاءات وبدلات": "Advances, penalties & allowances",
+  "إجمالي المتبقي": "Total remaining", "إجمالي الخصومات": "Total deductions", "إجمالي البدلات والحوافز": "Total allowances",
+  // settings common
+  "الفريق والصلاحيات": "Team & permissions", "سجل العمليات": "Activity log", "إدارة الصلاحيات": "Manage permissions", "مواعيد وقواعد العمل": "Work hours & rules", "موقع المطعم": "Restaurant location",
+  "حدّد موقع المطعم على الخريطة": "Set restaurant location on map", "احفظ الموقع": "Save location",
+  // misc
+  "الاسم": "Name", "الوظيفة": "Job", "الحالة": "Status", "الصلاحية": "Role", "المرتب الشهري": "Monthly salary",
+  "إلغاء": "Cancel", "اكتب الاسم.": "Enter the name.", "تسجيل سلفة": "Add advance", "تسجيل جزاء": "Add penalty", "تسجيل بدل / حافز": "Add allowance / bonus",
+  "موقع المطعم": "Restaurant location", "الفريق": "Team", "النهارده · ": "Today · ", "حضوري في": "My attendance",
+};
+const PREFIX = [
+  [/^حضوري في /, "My attendance · "], [/^جدول شيفتاتك · /, "Your shifts · "], [/^الحضور اليومي · /, "Daily attendance · "],
+  [/^أهلًا /, "Hello "], [/^مستندات /, "Documents · "], [/^صلاحيات الـ HR/, "HR permissions"],
+];
+function applyI18n() {
+  const html = document.documentElement;
+  html.setAttribute("lang", LANG); html.setAttribute("dir", EN() ? "ltr" : "rtl");
+  if (!EN()) return;
+  const root = document.body;
+  const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+  const nodes = []; while (w.nextNode()) nodes.push(w.currentNode);
+  nodes.forEach(n => {
+    const raw = n.nodeValue, key = raw.trim(); if (!key) return;
+    if (I18N[key] != null) { n.nodeValue = raw.replace(key, I18N[key]); return; }
+    for (const [re, rep] of PREFIX) { if (re.test(key)) { n.nodeValue = raw.replace(re, rep); return; } }
+  });
+  root.querySelectorAll("[placeholder]").forEach(el => { const v = I18N[(el.getAttribute("placeholder") || "").trim()]; if (v != null) el.setAttribute("placeholder", v); });
+  root.querySelectorAll("[aria-label],[title]").forEach(el => { ["aria-label", "title"].forEach(a => { const g = el.getAttribute(a); if (g && I18N[g.trim()] != null) el.setAttribute(a, I18N[g.trim()]); }); });
+}
+
 const pad = n => String(n).padStart(2, "0");
 const cairoDate = (d = new Date()) => new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
 const TODAY = cairoDate();
@@ -47,7 +127,7 @@ const money = n => (Math.round((+n || 0) * 100) / 100).toLocaleString("en-US");
 const tmin = t => { const [h, m] = String(t || "0:0").split(":").map(Number); return (h || 0) * 60 + (m || 0); };
 const t12 = t => { const m = tmin(t), h = Math.floor(m / 60) % 24; return `${((h + 11) % 12) + 1}:${pad(m % 60)} ${h < 12 ? "ص" : "م"}`; };
 const clock = ts => ts ? new Intl.DateTimeFormat("en-US", { timeZone: TZ, hour: "numeric", minute: "2-digit" }).format(new Date(ts)).replace("AM", "ص").replace("PM", "م") : "—";
-const monthLabel = k => { const [y, m] = k.split("-").map(Number); return `${MONTHS[m - 1]} ${y}`; };
+const monthLabel = k => { const [y, m] = k.split("-").map(Number); return `${(EN() ? MON_EN : MONTHS)[m - 1]} ${y}`; };
 const daysIn = k => { const [y, m] = k.split("-").map(Number); return new Date(y, m, 0).getDate(); };
 const shiftMonth = (k, d) => { const [y, m] = k.split("-").map(Number); const x = new Date(y, m - 1 + d, 1); return `${x.getFullYear()}-${pad(x.getMonth() + 1)}`; };
 const isStaff = () => S.me && (S.me.role === "hr" || S.me.role === "owner") && S.me.active;
@@ -310,7 +390,7 @@ function vMe() {
   ${S.leave.length ? `<div class="stack">${S.leave.slice(0, 6).map(l => leaveCard(l, false)).join("")}</div>` : `<div class="card empty">مفيش طلبات لسه. اطلب إجازة من الزرار فوق.</div>`}
   ${(() => {
     const ms = S.rota.filter(r => r.user_id === S.me.id).sort((a, b) => a.work_date.localeCompare(b.work_date));
-    const row = r => { const d = new Date(r.work_date + "T00:00:00"); const today = r.work_date === TODAY; return `<div class="row" style="padding:8px 0;border-bottom:1px solid var(--line)${today ? ";color:var(--accent);font-weight:700" : ""}"><span class="grow">${WD[d.getDay()]} ${esc(r.work_date.slice(8))}/${esc(r.work_date.slice(5, 7))}${today ? " · النهارده" : ""}</span><span class="chip ${r.shift === "off" ? "O" : r.shift}">${r.shift === "off" ? "إجازة" : SHIFT[r.shift]}</span></div>`; };
+    const row = r => { const d = new Date(r.work_date + "T00:00:00"); const today = r.work_date === TODAY; return `<div class="row" style="padding:8px 0;border-bottom:1px solid var(--line)${today ? ";color:var(--accent);font-weight:700" : ""}"><span class="grow">${wdName(d.getDay())} ${esc(r.work_date.slice(8))}/${esc(r.work_date.slice(5, 7))}${today ? " · النهارده" : ""}</span><span class="chip ${r.shift === "off" ? "O" : r.shift}">${r.shift === "off" ? "إجازة" : SHIFT[r.shift]}</span></div>`; };
     return `<h2>جدول شيفتاتك · ${monthLabel(S.month)}</h2>${ms.length ? `<div class="card">${ms.map(row).join("")}</div>` : `<div class="card empty">لسه مفيش شيفتات متحددة ليك الشهر ده.<div class="note" style="margin-top:4px">الإدارة بتحدد الشيفتات من قسم «الشيفتات».</div></div>`}`;
   })()}
   <h2>حضوري في ${monthLabel(S.month)}</h2>
@@ -345,7 +425,7 @@ function vMonth() {
   const head = `<div class="row"><h1 class="grow">جدول الشهر</h1>${monthBar()}</div>`;
   if (!ws.length) return head + `<div class="card empty"><b>لسه مفيش موظفين</b></div>`;
   let th = `<th class="who">الموظف</th>`;
-  for (let i = 1; i <= n; i++) { const wd = new Date(y, m - 1, i).getDay(), iso = `${S.month}-${pad(i)}`; th += `<th class="${iso === TODAY ? "today" : wd === 5 ? "fri" : ""}"><small>${WD[wd]}</small><span class="num">${i}</span></th>`; }
+  for (let i = 1; i <= n; i++) { const wd = new Date(y, m - 1, i).getDay(), iso = `${S.month}-${pad(i)}`; th += `<th class="${iso === TODAY ? "today" : wd === 5 ? "fri" : ""}"><small>${wdName(wd)}</small><span class="num">${i}</span></th>`; }
   th += `<th>أيام</th><th>ساعات</th>`;
   const body = ws.map(p => {
     const by = {}; S.att.filter(a => a.user_id === p.id).forEach(a => by[a.work_date] = a);
@@ -378,10 +458,10 @@ function vRota() {
   if (!ws.length) return head + `<div class="card empty"><b>لسه مفيش موظفين</b></div>`;
   const map = {}; S.rota.forEach(r => map[r.user_id + "|" + r.work_date] = r.shift);
   let th = `<th class="who">الموظف</th>`;
-  for (let i = 1; i <= n; i++) { const wd = new Date(y, m - 1, i).getDay(), iso = `${S.month}-${pad(i)}`; th += `<th class="${iso === TODAY ? "today" : wd === 5 ? "fri" : ""}"><small>${WD[wd]}</small><span class="num">${i}</span></th>`; }
+  for (let i = 1; i <= n; i++) { const wd = new Date(y, m - 1, i).getDay(), iso = `${S.month}-${pad(i)}`; th += `<th class="${iso === TODAY ? "today" : wd === 5 ? "fri" : ""}"><small>${wdName(wd)}</small><span class="num">${i}</span></th>`; }
   const body = ws.map(p => {
     let tds = `<td class="who">${esc(p.full_name)}</td>`;
-    for (let i = 1; i <= n; i++) { const iso = `${S.month}-${pad(i)}`, sh = map[p.id + "|" + iso]; const cls = sh === "off" ? "O" : sh || ""; const txt = sh === "off" ? "ج" : sh === "E" ? "م" : sh === "M" ? "ص" : ""; tds += `<td><button class="d ${cls}" data-act="rota-cell" data-emp="${esc(p.id)}" data-date="${iso}">${txt}</button></td>`; }
+    for (let i = 1; i <= n; i++) { const iso = `${S.month}-${pad(i)}`, sh = map[p.id + "|" + iso]; const cls = sh === "off" ? "O" : sh || ""; const txt = sh === "off" ? (EN() ? "L" : "ج") : sh === "E" ? (EN() ? "E" : "م") : sh === "M" ? (EN() ? "M" : "ص") : ""; tds += `<td><button class="d ${cls}" data-act="rota-cell" data-emp="${esc(p.id)}" data-date="${iso}">${txt}</button></td>`; }
     return `<tr>${tds}</tr>`;
   }).join("");
   return head + `<div class="scroll"><table class="grid"><thead><tr>${th}</tr></thead><tbody>${body}</tbody></table></div>
@@ -481,13 +561,15 @@ const ICONS = {
 };
 const VIEWS = { dash: vDash, today: vToday, month: vMonth, rota: vRota, staff: vStaff, leave: vLeave, money: vMoney, payroll: vPayroll, announce: vAnnounce, setup: vSetup, me: vMe };
 let raf = 0;
+const langBtn = () => `<button class="iconbtn" data-act="lang" title="Language / اللغة">${EN() ? "عربي" : "EN"}</button>`;
 function render() { cancelAnimationFrame(raf); raf = requestAnimationFrame(paint); }
-function paint() {
+function paint() { try { paintBody(); } finally { try { applyI18n(); } catch (_) {} } }
+function paintBody() {
   const main = $("#main"), nav = $("#nav"), ha = $("#head-actions");
-  nav.hidden = true; ha.innerHTML = "";
+  nav.hidden = true; ha.innerHTML = langBtn();
   if (!sb) { main.innerHTML = vSetupNeeded(); return; }
   if (!S.session) { main.innerHTML = vAuth(); return; }
-  ha.innerHTML = `<button class="iconbtn" data-act="refresh" aria-label="تحديث" title="تحديث">${S.loading ? "⏳" : "↻"} تحديث</button>` + (can("settings") || isOwner() ? `<a class="iconbtn" href="#setup" style="text-decoration:none">الإعدادات</a>` : "") + `<button class="iconbtn" data-act="logout">خروج</button>`;
+  ha.innerHTML = langBtn() + `<button class="iconbtn" data-act="refresh" aria-label="تحديث" title="تحديث">${S.loading ? "⏳" : "↻"} تحديث</button>` + (can("settings") || isOwner() ? `<a class="iconbtn" href="#setup" style="text-decoration:none">الإعدادات</a>` : "") + `<button class="iconbtn" data-act="logout">خروج</button>`;
   if (S.loading) { main.innerHTML = skel(4); return; }
   if (!S.me) { main.innerHTML = `<div class="card stack auth"><h1>الحساب مش مكتمل</h1><p>دخلت، بس مفيش ملف موظف مربوط بالحساب ده. ده بيحصل لو الحساب اتعمل قبل تجهيز قاعدة البيانات.</p><div class="row"><button class="btn" data-act="refresh">جرّب تاني</button><button class="btn ghost" data-act="logout">خروج</button></div></div>`; return; }
   $("#who").textContent = ROLES[S.me.role] || "";
@@ -512,6 +594,7 @@ function openDlg(html, onSubmit) {
   $("#f").addEventListener("submit", ev => { ev.preventDefault(); onSubmit && onSubmit(new FormData(ev.target), m => { $("#f-err").textContent = m; }); });
   dlg.querySelectorAll("[data-close]").forEach(b => b.addEventListener("click", () => dlg.close()));
   dlg.showModal();
+  try { applyI18n(); } catch (_) {}
 }
 const foot = (label, cls = "") => `<div class="err" id="f-err" role="alert"></div><div class="row"><button class="btn ${cls}" type="submit">${label}</button><button class="btn ghost" type="button" data-close>إلغاء</button></div>`;
 const empOptions = sel => workers().map(p => `<option value="${esc(p.id)}" ${p.id === sel ? "selected" : ""}>${esc(p.full_name)}</option>`).join("");
@@ -815,6 +898,7 @@ async function doAuth() {
 document.addEventListener("click", async ev => {
   const b = ev.target.closest("[data-act]"); if (!b) return;
   const a = b.dataset.act, id = b.dataset.id;
+  if (a === "lang") { LANG = EN() ? "ar" : "en"; try { localStorage.setItem("fenjan_lang", LANG); } catch (_) {} return render(); }
   if (a === "auth-in" || a === "auth-up") { S.authMode = a === "auth-up" ? "up" : "in"; return render(); }
   if (a === "auth-go") return doAuth();
   if (a === "push-on") return enablePush();
@@ -890,7 +974,7 @@ document.addEventListener("click", async ev => {
     navigator.serviceWorker.getRegistrations().then(rs => {
       rs.forEach(r => { if (r.active && /\/sw\.js(\?|$)/.test(r.active.scriptURL)) r.unregister(); });
     }).catch(() => {});
-    navigator.serviceWorker.register("sw-push.js?v=18").then(reg => {
+    navigator.serviceWorker.register("sw-push.js?v=19").then(reg => {
       refreshPushState();
       reg.update().catch(() => {});
       setInterval(() => reg.update().catch(() => {}), 36e5);
