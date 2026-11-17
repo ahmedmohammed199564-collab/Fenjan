@@ -1,13 +1,12 @@
-// فنجان — المساعد الذكي: بيجاوب على أسئلة الإدارة من بيانات التطبيق.
-// بيستخدم Google Gemini (مجاني) مع إعادة محاولة تلقائية وموديل احتياطي.
-// السر المطلوب: GEMINI_API_KEY  (من https://aistudio.google.com/apikey)
+// فنجان — المساعد الذكي (نسخة خفيفة وسريعة). Google Gemini.
+// السر المطلوب: GEMINI_API_KEY
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const URL = Deno.env.get("SUPABASE_URL")!;
 const ANON = Deno.env.get("SUPABASE_ANON_KEY")!;
 const KEY = Deno.env.get("GEMINI_API_KEY") || "";
-const PRIMARY = Deno.env.get("GEMINI_MODEL") || "gemini-3.8-flash";
-const MODELS = [...new Set([PRIMARY, "gemini-flash-latest", "gemini-2.5-flash", "gemini-pro-latest"])];
+const PRIMARY = Deno.env.get("GEMINI_MODEL") || "gemini-flash-latest";
+const MODELS = [...new Set([PRIMARY, "gemini-2.5-flash"])];
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -16,37 +15,28 @@ const cors = {
 };
 const json = (o: unknown, status = 200) =>
   new Response(JSON.stringify(o), { status, headers: { ...cors, "Content-Type": "application/json" } });
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-async function callModel(model: string, prompt: string) {
-  for (let attempt = 0; attempt < 3; attempt++) {
-    let r: Response, j: any;
-    try {
-      r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${KEY}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.4, maxOutputTokens: 800 } }),
-      });
-      j = await r.json();
-    } catch (_) { await sleep(500 * (attempt + 1)); continue; }
-    if (r.ok) {
-      const ans = j?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-      if (ans) return { ok: true, ans };
-      return { ok: false, hard: true, msg: "رد فاضي" };
-    }
-    const msg = (j?.error?.message || "").toLowerCase();
-    const retriable = r.status === 429 || r.status === 503 || msg.includes("high demand") || msg.includes("overloaded") || msg.includes("try again") || msg.includes("unavailable");
-    const notFound = r.status === 404 || msg.includes("not found") || msg.includes("no longer available");
-    if (notFound) return { ok: false, next: true, msg: j?.error?.message || "" };
-    if (!retriable) return { ok: false, hard: true, status: r.status, msg: j?.error?.message || "" };
-    await sleep(600 * (attempt + 1));
-  }
-  return { ok: false, next: true, msg: "high demand" };
+async function ask(model: string, prompt: string) {
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), 12000);
+  try {
+    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${KEY}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.4, maxOutputTokens: 700 } }),
+      signal: ctl.signal,
+    });
+    const j = await r.json();
+    if (r.ok) { const a = j?.candidates?.[0]?.content?.parts?.[0]?.text?.trim(); return a ? { ok: true, a } : { ok: false, msg: "رد فاضي" }; }
+    return { ok: false, msg: j?.error?.message || ("HTTP " + r.status) };
+  } catch (e) {
+    return { ok: false, msg: String((e as Error)?.message || e) };
+  } finally { clearTimeout(t); }
 }
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
-  if (!KEY) return json({ error: "missing_key", detail: "حط GEMINI_API_KEY في Secrets الأول." });
+  if (!KEY) return json({ error: "missing_key", detail: "حط GEMINI_API_KEY في Secrets." });
 
   const asUser = createClient(URL, ANON, { global: { headers: { Authorization: req.headers.get("Authorization") || "" } } });
   const { data: staff } = await asUser.rpc("is_staff");
@@ -55,22 +45,14 @@ Deno.serve(async (req) => {
   const { question, context } = await req.json().catch(() => ({ question: "", context: {} }));
   if (!question) return json({ error: "no_question", detail: "اكتب سؤال." });
 
-  const sys = [
-    "انت مساعد إدارة ذكي لمطعم اسمه «فنجان».",
-    "بتتكلم بالعربي المصري، باختصار ووضوح، وبتستخدم الأرقام اللي في البيانات.",
-    "البيانات اللي معاك بتاعة شهر واحد (المذكور في month) وبالجنيه المصري.",
-    "لو السؤال بيطلب تحليل أو توصيات، اديله ملاحظات عملية ومفيدة للمطعم.",
-    "لو البيانات مفيهاش إجابة، قول كده بوضوح بدل ما تخمّن.",
-  ].join(" ");
-  const prompt = `${sys}\n\nالبيانات (JSON):\n${JSON.stringify(context).slice(0, 25000)}\n\nسؤال المدير: ${question}`;
+  const sys = "انت مساعد إدارة ذكي لمطعم اسمه «فنجان». بتتكلم بالعربي المصري باختصار ووضوح وبتستخدم الأرقام اللي في البيانات. البيانات بتاعة شهر واحد وبالجنيه المصري. لو فيها إجابة اديها، ولو مفيهاش قول كده بوضوح.";
+  const prompt = `${sys}\n\nالبيانات (JSON):\n${JSON.stringify(context).slice(0, 20000)}\n\nسؤال المدير: ${question}`;
 
   let last = "";
   for (const m of MODELS) {
-    const res = await callModel(m, prompt);
-    if (res.ok) return json({ answer: res.ans });
+    const res = await ask(m, prompt);
+    if (res.ok) return json({ answer: res.a });
     last = res.msg || "";
-    if (res.hard) return json({ error: "ai_error", detail: (last || "").slice(0, 300) });
-    // otherwise (next / high demand) → جرّب الموديل اللي بعده
   }
-  return json({ error: "busy", detail: "المساعد مزحوم دلوقتي، جرّب تاني بعد شوية." });
+  return json({ error: "ai_error", detail: (last || "المساعد مزحوم دلوقتي، جرّب تاني.").slice(0, 300) });
 });
