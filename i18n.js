@@ -386,6 +386,8 @@ window.FENJAN_I18N = {
   "👀 جرّب البرنامج من غير تسجيل": "👀 Try the app without signing up",
   "👀 نسخة تجربة — كل البيانات دي وهمية للعرض بس.": "👀 Demo mode — all this data is sample data for preview only.",
   "اخرج من التجربة": "Exit demo",
+  "💬 اشترك دلوقتي": "💬 Subscribe now",
+  "اخرج": "Exit",
   "🗑️ احذف الموظف نهائيًا": "🗑️ Delete employee permanently",
   "حذف الموظف": "Delete employee",
   "احذف نهائيًا": "Delete permanently",

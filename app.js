@@ -763,7 +763,7 @@ function paintBody() {
   }
   const sc = $(".scroll"), sl = sc ? sc.scrollLeft : null;
   main.innerHTML = VIEWS[v]();
-  if (S.demo) main.insertAdjacentHTML("afterbegin", `<div class="banner" style="background:linear-gradient(90deg,#7C6CFF,#C06CFF);color:#fff;border:0"><span class="grow">👀 نسخة تجربة — كل البيانات دي وهمية للعرض بس.</span><button class="btn small ghost" data-act="logout" style="color:#fff;border-color:rgba(255,255,255,.6)">اخرج من التجربة</button></div>`);
+  if (S.demo) main.insertAdjacentHTML("afterbegin", `<div class="banner" style="background:linear-gradient(90deg,#7C6CFF,#C06CFF);color:#fff;border:0;flex-wrap:wrap"><span class="grow">👀 نسخة تجربة — كل البيانات دي وهمية للعرض بس.</span><a class="btn small" href="https://wa.me/201095868933?text=${encodeURIComponent("أهلاً، مهتم أشترك في نظام Attenda HR لشؤون الموظفين 👋")}" target="_blank" rel="noopener" style="text-decoration:none;background:#fff;color:#7C6CFF;font-weight:800">💬 اشترك دلوقتي</a><button class="btn small ghost" data-act="logout" style="color:#fff;border-color:rgba(255,255,255,.6)">اخرج</button></div>`);
   if (sl !== null && $(".scroll")) $(".scroll").scrollLeft = sl;
 }
 window.addEventListener("hashchange", render);
@@ -1313,7 +1313,7 @@ document.addEventListener("click", async ev => {
     navigator.serviceWorker.getRegistrations().then(rs => {
       rs.forEach(r => { if (r.active && /\/sw\.js(\?|$)/.test(r.active.scriptURL)) r.unregister(); });
     }).catch(() => {});
-    navigator.serviceWorker.register("sw-push.js?v=34").then(reg => {
+    navigator.serviceWorker.register("sw-push.js?v=35").then(reg => {
       refreshPushState();
       reg.update().catch(() => {});
       setInterval(() => reg.update().catch(() => {}), 36e5);
