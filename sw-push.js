@@ -1,6 +1,6 @@
 // Fenjan service worker: network-first (always fetches latest when online, so the
 // installed app icon auto-updates) + push notifications.
-const V = "v31";
+const V = "v32";
 const CACHE = "fenjan-" + V;
 
 self.addEventListener("install", () => self.skipWaiting());

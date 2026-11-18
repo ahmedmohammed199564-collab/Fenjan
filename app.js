@@ -126,7 +126,7 @@ async function enablePush() {
 }
 function pushBtn() {
   if (S.pushOn) return `<div class="card stack" style="gap:10px"><div class="row"><span class="tag grow">🔔 إشعارات الموبايل مفعّلة</span></div><div class="row" style="gap:8px;flex-wrap:wrap"><button class="btn ghost small" data-act="push-local">جرّب على جهازي</button>${isStaff() ? `<button class="btn ghost small" data-act="push-test">ابعت تجريبي للكل</button>` : ""}</div></div>`;
-  return `<div class="card stack"><div class="row"><span class="grow">فعّل إشعارات الموبايل علشان توصلك الإعلانات حتى والتطبيق مقفول.</span><button class="btn" data-act="push-on" ${S.pushBusy ? "disabled" : ""}>${S.pushBusy ? "لحظة…" : "فعّل الإشعارات"}</button></div><p class="note">على الآيفون: لازم تضيف التطبيق للشاشة الرئيسية الأول، وبعدين تفعّل من هناك.</p></div>`;
+  return `<div class="card stack"><div class="row"><span class="grow">فعّل إشعارات الموبايل علشان توصلك الإعلانات حتى والتطبيق مقفول.</span><button class="btn" data-act="push-on" ${S.pushBusy ? "disabled" : ""}>${S.pushBusy ? "لحظة…" : "فعّل الإشعارات"}</button></div></div>`;
 }
 
 const money = n => (Math.round((+n || 0) * 100) / 100).toLocaleString("en-US");
@@ -351,7 +351,7 @@ function vDash() {
     <div class="row" style="justify-content:space-between"><span class="note">١</span><span class="note">${dim}</span></div></div>
   <div class="card stack"><h2>أكتر الموظفين تأخيرًا</h2>
     ${topLate.length ? topLate.map(x => `<div class="lrow"><div class="row" style="gap:10px">${avatar(x.p.full_name, 34)}<span class="grow">${esc(x.p.full_name || "—")}</span><b class="num">${x.n}</b></div><div class="ltrack"><div class="lfill" style="width:${Math.round(x.n / maxLate * 100)}%"></div></div></div>`).join("") : `<p class="note" style="margin:0">مفيش تأخير متسجل الشهر ده 👏</p>`}</div>
-  ${can("payroll") && S.closes.length ? `<div class="card stack"><h2>أرشيف الشهور المقفولة</h2>${(() => { const cs = [...S.closes].sort((a, b) => a.month.localeCompare(b.month)); const mx = Math.max(1, ...cs.map(c => +c.net_total || 0)); return cs.map(c => `<div class="lrow"><div class="row"><span class="grow">${monthLabel(c.month)}</span><b class="num">${money(c.net_total)} ج</b></div><div class="ltrack"><div class="lfill" style="width:${Math.round((+c.net_total || 0) / mx * 100)}%;background:linear-gradient(90deg,var(--accent),color-mix(in srgb,var(--accent) 70%,#000))"></div></div></div>`).join(""); })()}<p class="note" style="margin:0">مقارنة صافي المرتبات بين الشهور المقفولة.</p></div>` : ""}`;
+  ${can("payroll") && S.closes.length ? `<div class="card stack"><h2>أرشيف الشهور المقفولة</h2>${(() => { const cs = [...S.closes].sort((a, b) => a.month.localeCompare(b.month)); const mx = Math.max(1, ...cs.map(c => +c.net_total || 0)); return cs.map(c => `<div class="lrow"><div class="row"><span class="grow">${monthLabel(c.month)}</span><b class="num">${money(c.net_total)} ج</b></div><div class="ltrack"><div class="lfill" style="width:${Math.round((+c.net_total || 0) / mx * 100)}%;background:linear-gradient(90deg,var(--accent),color-mix(in srgb,var(--accent) 70%,#000))"></div></div></div>`).join(""); })()}</div>` : ""}`;
 }
 
 function vSetupNeeded() {
@@ -373,7 +373,7 @@ function vAuth() {
     <label for="a-pw">كلمة السر${up ? " (6 حروف أو أرقام على الأقل)" : ""}<input id="a-pw" type="password" dir="ltr" autocomplete="${up ? "new-password" : "current-password"}" data-act="auth-enter"></label>
     <div class="err" id="a-err" role="alert"></div>
     <button class="btn" type="button" data-act="auth-go" id="a-go">${up ? "اعمل الحساب" : "ادخل"}</button>
-    <p class="note">${up ? "أول حساب يتعمل بيبقى صاحب المطعم. أي حساب بعده لازم الإدارة توافق عليه." : "أول مرة تستخدم التطبيق؟ دوس «حساب جديد» فوق. الدخول ده للي عمل حساب قبل كده."}</p></div>
+    </div>
   </div>`;
 }
 function vPending() {
@@ -430,7 +430,7 @@ function vLeave() {
     <h2>الإجازات</h2>
     ${pend.length ? `<div class="stack">${pend.map(l => leaveCard(l, true)).join("")}</div>` : `<div class="card empty"><b>مفيش طلبات إجازة مستنية</b></div>`}
     ${done.length ? `<div class="stack" style="margin-top:8px">${done.slice(0, 30).map(l => leaveCard(l, true)).join("")}</div>` : ""}
-    <p class="note">الموافقة على الأوفر تايم بتضيف ساعاته للمرتب. الموافقة على الإجازة بتسجّل أيامها «إجازة» في الحضور.</p>`;
+    `;
 }
 function leaveDlg() {
   openDlg(`<h3>طلب إجازة / غياب</h3>
@@ -456,7 +456,7 @@ function otCard(o, staff) {
 }
 function otDlg() {
   openDlg(`<h3>طلب أوفر تايم</h3>
-    <p class="note" style="margin:0">الشيفت ${money(SHIFT_H())} ساعات. اطلب الساعات الإضافية اللي اشتغلتها والمدير هيوافق.</p>
+    
     <div class="two"><label for="o-date">اليوم<input id="o-date" name="work_date" type="date" dir="ltr" value="${TODAY}"></label><label for="o-hours">عدد الساعات الإضافية<input id="o-hours" name="hours" type="number" min="0.5" step="0.5" dir="ltr" value="1"></label></div>
     <label for="o-reason">السبب (اختياري)<textarea id="o-reason" name="reason" rows="2" placeholder="مثال: ضغط شغل آخر اليوم"></textarea></label>
     ${foot("ابعت الطلب")}`,
@@ -498,13 +498,13 @@ function idCardRequired() {
   return `<div class="card stack" style="text-align:center;padding:26px;align-items:center">
     <div style="font-size:40px">🪪</div>
     <h2 style="justify-content:center">تسجيل البطاقة مطلوب</h2>
-    <p class="note" style="margin:0">لازم ترفع صورة بطاقتك الشخصية الأول عشان تقدر تستخدم التطبيق وتسجّل حضورك.</p>
+    
     <div><button class="btn" data-act="idcard">📷 ارفع صورة البطاقة</button></div>
   </div>`;
 }
 function idCardDlg() {
   openDlg(`<h3>تسجيل البطاقة</h3>
-    <p class="note" style="margin:0">ارفع صورة واضحة لبطاقتك الشخصية. دي خطوة لازمة مرة واحدة بس.</p>
+    
     <label class="btn" style="text-align:center;cursor:pointer">📷 اختار صورة البطاقة<input type="file" id="idc-file" accept="image/*" hidden></label>
     <div class="err" id="idc-err"></div>
     <div class="row"><button class="btn ghost" type="button" data-close>بعدين</button></div>`);
@@ -597,7 +597,7 @@ function vMonth() {
     return `<tr>${tds}<td class="num">${c.worked}</td><td class="num">${money(c.hours)}</td></tr>`;
   }).join("");
   return head + `<div class="row"><span class="chip M">ص = صباحي</span><span class="chip E">م = مسائي</span><span class="chip O">ج = إجازة</span><span class="chip A">غ = غياب</span><span class="note">النقطة الحمرا = تأخير</span></div>
-  <div class="scroll"><table class="grid"><thead><tr>${th}</tr></thead><tbody>${body}</tbody></table></div><p class="note">دوس على أي يوم علشان تشوف تفاصيله أو تعدّله.</p>`;
+  <div class="scroll"><table class="grid"><thead><tr>${th}</tr></thead><tbody>${body}</tbody></table></div>`;
 }
 function vStaff() {
   const pend = S.people.filter(p => p.role === "pending"), rest = S.people.filter(p => p.role !== "pending");
@@ -607,7 +607,7 @@ function vStaff() {
   return `<div class="row"><h1 class="grow">الموظفين <span class="note num">(${rest.length})</span></h1><button class="iconbtn" data-act="refresh">حدّث</button></div>
   ${pend.length ? `<h2>حسابات مستنية الموافقة</h2><div class="card">${pend.map(card).join("")}</div>` : ""}
   ${rest.length ? `<div class="card">${rest.map(card).join("")}</div>` : ""}
-  <p class="note">علشان تضيف موظف: ابعتله لينك التطبيق، يعمل حساب برقم تليفونه، وبعدين يظهر هنا وتوافق عليه. وافق بس على اللي تعرفهم.</p>`;
+  `;
 }
 function vRota() {
   const ws = workers(), n = daysIn(S.month), [y, m] = S.month.split("-").map(Number);
@@ -622,7 +622,7 @@ function vRota() {
     return `<tr>${tds}</tr>`;
   }).join("");
   return head + `<div class="scroll"><table class="grid"><thead><tr>${th}</tr></thead><tbody>${body}</tbody></table></div>
-  <p class="note">دوس على أي يوم علشان تحدّد الشيفت: فاضي ← <b>ص</b> صباحي ← <b>م</b> مسائي ← <b>ج</b> إجازة ← فاضي. الموظف بيشوف جدوله في شاشته. ده جدول مخطط ومنفصل عن الحضور الفعلي.</p>`;
+  `;
 }
 async function rotaCycle(emp, date) {
   const row = S.rota.find(r => r.user_id === emp && r.work_date === date), cur = row ? row.shift : undefined;
@@ -666,7 +666,7 @@ function vPayroll() {
   ${rows.map(r => `<tr><td><b>${esc(r.p.full_name)}</b><div class="pjob">${esc(r.p.job || "")}</div></td><td class="num">${r.c.worked}</td><td class="num">${r.c.off}</td><td class="num">${r.c.absent ? `<span class="chip A">${r.c.absent}</span>` : 0}</td><td class="num">${r.c.lates ? `${r.c.lates} (${r.c.lateMin} د)` : 0}</td><td class="num">${money(r.c.hours)}</td><td class="num">${money(r.salary)}</td>${showOT ? `<td class="num pos">${r.otPay ? money(r.otPay) : "—"}</td>` : ""}${showAllow ? `<td class="num pos">${r.allow ? money(r.allow) : "—"}</td>` : ""}${ad ? `<td class="num">${money(r.absDed)}</td>` : ""}<td class="num">${money(r.advBal)}</td><td class="num">${money(r.penSum)}</td>${showAuto ? `<td class="num neg">${r.autoDed ? money(r.autoDed) : "—"}</td>` : ""}<td class="num money ${r.net < 0 ? "neg" : ""}">${money(r.net)}</td><td><div class="row" style="gap:6px;flex-wrap:nowrap">${(() => { const paid = S.paid.some(x => x.user_id === r.p.id); return `<button class="btn ${paid ? "ghost" : ""} small" data-act="pay-toggle" data-id="${esc(r.p.id)}" data-net="${r.net}">${paid ? "✓ مدفوع" : "صرف"}</button>`; })()}<button class="btn ghost small" data-act="payslip" data-id="${esc(r.p.id)}">قسيمة</button></div></td></tr>`).join("")}
   </tbody><tfoot><tr><td colspan="${cols - 2}">الإجمالي</td><td class="num money">${money(T.net)}</td><td></td></tr></tfoot></table></div>
   <div class="row"><button class="btn" data-act="xlsx">📊 نزّل ملخص الشهر (Excel)</button><button class="btn ghost" data-act="print-pay">🖨️ اطبع الكشف (PDF)</button><button class="btn ghost" data-act="copy">انسخ الكشف</button></div>
-  <p class="note">الصافي = المرتب ${showOT ? "+ أوفر تايم " : ""}${showAllow ? "+ بدلات " : ""}${ad ? "− خصم الغياب " : ""}− المتبقي من سلف الشهر − جزاءات الشهر. ${showOT ? `ساعة الأوفر تايم = ${money(S.settings.ot_rate)} ج. ` : ""}${ad ? `خصم يوم الغياب = المرتب ÷ ${S.settings.divisor}. ` : ""}التأخير بيظهر للعلم ومش بيتخصم لوحده. الضرايب والتأمينات مش محسوبة هنا.</p>`;
+  `;
 }
 function vSetup() {
   const s = S.settings;
@@ -674,7 +674,7 @@ function vSetup() {
   <div class="card stack"><h2>موقع المطعم</h2>
     <div class="row"><span class="grow">${s.site_lat == null ? `<b class="neg">لسه متحددش</b>` : `متحدد <span class="note num">(${(+s.site_lat).toFixed(5)}, ${(+s.site_lng).toFixed(5)})</span>`}</span><span class="note">مسافة السماح: <b class="num">${s.radius_m}</b> متر</span></div>
     <div class="row"><button class="btn" data-act="site-dlg">حدّد موقع المطعم على الخريطة</button></div>
-    <p class="note">تقدر تحرّك الدبوس على أي مكان، أو تكتب الإحداثيات، أو تلصق لينك Google Maps. الموظف مش هيقدر يسجّل حضور غير وهو جوه مسافة السماح من النقطة دي.</p></div>
+    </div>
   <div class="card stack"><h2>الشيفتات والقواعد</h2>
     <div class="row"><span class="chip M">صباحي</span><span class="num grow">${t12(s.m_in)} ← ${t12(s.m_out)}</span></div>
     <div class="row"><span class="chip E">مسائي</span><span class="num grow">${t12(s.e_in)} ← ${t12(s.e_out)}</span></div>
@@ -700,7 +700,7 @@ function teamCard() {
   const row = p => `<div class="person"><div class="row">${avatar(p.full_name)}<div class="grow"><div class="pname">${esc(p.full_name || "—")} <span class="tag">${ROLES[p.role]}</span></div><div class="row" style="gap:6px;margin-top:6px">${permTags(p)}</div></div>
     ${p.id === S.me.id ? `<span class="note">إنت</span>` : `<button class="btn ghost small" data-act="emp-edit" data-id="${esc(p.id)}">إدارة الصلاحيات</button>`}</div></div>`;
   return `<div class="card stack"><h2>الفريق والصلاحيات</h2>
-    <p class="note" style="margin:0">عيّن مين HR، وحدد كل HR يقدر يعمل إيه. صاحب المطعم بس هو اللي يتحكم في ده.</p>
+    
     ${mem.map(row).join("")}</div>`;
 }
 
@@ -788,7 +788,7 @@ function empDlg(id) {
   const permBox = owner && p.id !== S.me.id ? `<div class="card stack" id="perm-box" style="padding:12px;background:var(--accent-soft);border:0" ${p.role === "hr" ? "" : "hidden"}>
       <div class="pname" style="font-size:14px">صلاحيات الـ HR</div>
       ${PERMS.map(([k, l]) => `<label class="chk"><input type="checkbox" name="can_${k}" ${p["can_" + k] ? "checked" : ""}><span>${l}</span></label>`).join("")}
-      <p class="note" style="margin:0">الصلاحيات دي بتشتغل بس لما الدور يكون «HR».</p></div>` : "";
+      </div>` : "";
   openDlg(`<h3>${pend ? "موافقة على حساب" : "تعديل موظف"}</h3>
     <label for="e-name">الاسم<input id="e-name" name="full_name" value="${esc(p.full_name)}"></label>
     <div class="two"><label for="e-job">الوظيفة<input id="e-job" name="job" list="jobs" value="${esc(p.job)}"><datalist id="jobs">${JOBS.map(j => `<option value="${j}">`).join("")}</datalist></label>
@@ -799,7 +799,7 @@ function empDlg(id) {
     <div class="two"><label for="e-role">الصلاحية<select id="e-role" name="role" ${lockRole ? "disabled" : ""}>${lockRole ? `<option>${ROLES[p.role]}</option>` : roleOpts}</select></label>
     <label for="e-active">الحالة<select id="e-active" name="active"><option value="1" ${p.active ? "selected" : ""}>شغّال</option><option value="0" ${p.active ? "" : "selected"}>موقوف</option></select></label></div>
     ${permBox}
-    <p class="note">${owner ? "صاحب المطعم يتحكم في الأدوار والصلاحيات." : showSalary ? "تقدر تعدّل البيانات ومنها المرتب." : "مالكش صلاحية المرتبات، فحقل المرتب مخفي."}</p>${foot(pend ? "وافق واحفظ" : "حفظ")}`,
+    ${foot(pend ? "وافق واحفظ" : "حفظ")}`,
     (fd, err) => {
       const name = String(fd.get("full_name") || "").trim();
       if (!name) return err("اكتب الاسم.");
@@ -828,7 +828,7 @@ function eosDlg(empId) {
     if (!f || !t || t < f) { $("#eo-out").textContent = "اكتب تواريخ صحيحة."; return; }
     const years = (new Date(t) - new Date(f)) / (365.25 * 864e5);
     const gratuity = Math.round((sal / 30) * dpy * years);
-    $("#eo-out").innerHTML = `<div class="row"><span class="grow">مدة الخدمة</span><b>${years.toFixed(2)} سنة</b></div><div class="row"><span class="grow">المستحق التقريبي</span><b class="num">${money(gratuity)} ج</b></div><p class="note" style="margin:6px 0 0">= (المرتب ÷ 30) × ${dpy} يوم × سنوات الخدمة. تقديري — راجع قانون العمل.</p>`;
+    $("#eo-out").innerHTML = `<div class="row"><span class="grow">مدة الخدمة</span><b>${years.toFixed(2)} سنة</b></div><div class="row"><span class="grow">المستحق التقريبي</span><b class="num">${money(gratuity)} ج</b></div>`;
   };
   $("#eo-calc").onclick = calc; calc();
 }
@@ -874,7 +874,7 @@ function cellDlg(emp, date) {
   openDlg(`<h3>${esc(p.full_name)} · <span class="num">${esc(date)}</span></h3>${info}
     <h2>سجّل يدوي</h2><div class="opts"><button type="button" class="M" data-set="M">حاضر صباحي</button><button type="button" class="E" data-set="E">حاضر مسائي</button><button type="button" class="O" data-set="off">إجازة</button><button type="button" class="A" data-set="absent">غياب</button></div>
     <div class="err" id="f-err" role="alert"></div><div class="row">${r ? `<button class="btn ghost" type="button" data-set="clear">امسح تسجيل اليوم</button>` : ""}<button class="btn ghost" type="button" data-close>قفل</button></div>
-    <p class="note">التسجيل اليدوي بيلغي وقت الدخول والانصراف المتسجل بالموبايل لليوم ده.</p>`);
+    `);
   dlg.querySelectorAll("[data-set]").forEach(b => b.addEventListener("click", () => {
     const v = b.dataset.set;
     if (v === "clear") return run(() => q(sb.from("attendance").delete().eq("user_id", emp).eq("work_date", date)), "اتمسح");
@@ -980,7 +980,7 @@ function siteDlg() {
   const s = S.settings;
   const lat0 = s.site_lat != null ? +s.site_lat : 30.0444, lng0 = s.site_lng != null ? +s.site_lng : 31.2357, rad0 = +s.radius_m || 150;
   openDlg(`<h3>موقع المطعم</h3>
-    <p class="note" style="margin:0">حرّك الدبوس على مكان المطعم، أو اكتب الإحداثيات، أو الصق لينك Google Maps.</p>
+    
     <div id="smap" style="height:260px;border-radius:12px;overflow:hidden;border:1px solid var(--line);background:var(--bg)"></div>
     <div class="row"><input id="s-paste" placeholder="لينك Google Maps أو 30.044, 31.235" style="flex:1"><button type="button" class="btn ghost small" data-set="paste">حدّد</button><button type="button" class="btn ghost small" data-set="here">📍 موقعي</button></div>
     <div class="two"><label for="s-lat">خط العرض (lat)<input id="s-lat" dir="ltr" inputmode="decimal" value="${lat0.toFixed(6)}"></label><label for="s-lng">خط الطول (lng)<input id="s-lng" dir="ltr" inputmode="decimal" value="${lng0.toFixed(6)}"></label></div>
@@ -1252,7 +1252,7 @@ document.addEventListener("click", async ev => {
     navigator.serviceWorker.getRegistrations().then(rs => {
       rs.forEach(r => { if (r.active && /\/sw\.js(\?|$)/.test(r.active.scriptURL)) r.unregister(); });
     }).catch(() => {});
-    navigator.serviceWorker.register("sw-push.js?v=31").then(reg => {
+    navigator.serviceWorker.register("sw-push.js?v=32").then(reg => {
       refreshPushState();
       reg.update().catch(() => {});
       setInterval(() => reg.update().catch(() => {}), 36e5);
