@@ -100,7 +100,7 @@ function applyI18n() {
 const pad = n => String(n).padStart(2, "0");
 const cairoDate = (d = new Date()) => new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
 const TODAY = cairoDate();
-const S = { session: null, me: null, settings: null, people: [], att: [], adv: [], pen: [], ann: [], leave: [], adj: [], rota: [], closes: [], audit: [], reads: [], ot: [], notes: [], advReq: [], paid: [], aiMsgs: [], aiBusy: false, month: TODAY.slice(0, 7), view: "", tab: "adv", authMode: "in", busy: false, loading: true, punchMsg: "", pushOn: false, pushBusy: false };
+const S = { session: null, me: null, settings: null, people: [], att: [], adv: [], pen: [], ann: [], leave: [], adj: [], rota: [], closes: [], audit: [], reads: [], ot: [], notes: [], advReq: [], paid: [], aiMsgs: [], aiBusy: false, month: TODAY.slice(0, 7), view: "", tab: "adv", authMode: "in", busy: false, loading: true, demo: false, punchMsg: "", pushOn: false, pushBusy: false };
 let sb = null;
 const VAPID_PUBLIC = "BE9BrAMkVAFH_Yo8OfdjqxzQyVJmqLH3C__aDPTYuQObwHeOh4ymSms2r-Ufgd9rVpqUR2Mcs4eTQvM_7Z3QJe8";
 function urlB64ToU8(s) { const pad = "=".repeat((4 - s.length % 4) % 4); const b = atob((s + pad).replace(/-/g, "+").replace(/_/g, "/")); const a = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) a[i] = b.charCodeAt(i); return a; }
@@ -225,6 +225,7 @@ async function loadMonth() {
   Object.assign(S, { people, att, adv, pen, ann: ann || [], leave: leave || [], adj: adj || [], rota: rota || [], closes: closes || [], audit: audit || [], reads: reads || [], ot: ot || [], notes: notes || [], advReq: advReq || [], paid: paid || [] });
 }
 async function refresh(silent) {
+  if (S.demo) return;
   if (!S.session) return;
   if (!silent) { S.loading = true; render(); }
   try { await loadMe(); if (S.me && S.me.role !== "pending" && S.me.active) await loadMonth(); }
@@ -373,6 +374,7 @@ function vAuth() {
     <label for="a-pw">كلمة السر${up ? " (6 حروف أو أرقام على الأقل)" : ""}<input id="a-pw" type="password" dir="ltr" autocomplete="${up ? "new-password" : "current-password"}" data-act="auth-enter"></label>
     <div class="err" id="a-err" role="alert"></div>
     <button class="btn" type="button" data-act="auth-go" id="a-go">${up ? "اعمل الحساب" : "ادخل"}</button>
+    <button class="btn ghost" type="button" data-act="demo-go" style="margin-top:2px">👀 جرّب البرنامج من غير تسجيل</button>
     </div>
   </div>`;
 }
@@ -761,6 +763,7 @@ function paintBody() {
   }
   const sc = $(".scroll"), sl = sc ? sc.scrollLeft : null;
   main.innerHTML = VIEWS[v]();
+  if (S.demo) main.insertAdjacentHTML("afterbegin", `<div class="banner" style="background:linear-gradient(90deg,#7C6CFF,#C06CFF);color:#fff;border:0"><span class="grow">👀 نسخة تجربة — كل البيانات دي وهمية للعرض بس.</span><button class="btn small ghost" data-act="logout" style="color:#fff;border-color:rgba(255,255,255,.6)">اخرج من التجربة</button></div>`);
   if (sl !== null && $(".scroll")) $(".scroll").scrollLeft = sl;
 }
 window.addEventListener("hashchange", render);
@@ -1122,6 +1125,53 @@ function sheet() {
   return [head, ...payroll().map(r => [r.p.full_name, r.p.job || "", r.c.worked, r.c.M, r.c.E, r.c.off, r.c.absent, r.c.lates, r.c.lateMin, Math.round(r.c.hours * 100) / 100, r.salary, r.otHours, r.otPay, r.allow, r.absDed, r.autoDed, r.advBal, r.penCount, r.penSum, r.ded, r.net])];
 }
 
+/* ---------- demo / تجربة ---------- */
+function loadDemo() {
+  const mk = (id, name, job, salary, opts = {}) => Object.assign({ id, full_name: name, job, role: "employee", active: true, pay_type: "monthly", salary, daily_rate: 0, hire_date: "2024-06-01", phone: "", id_card: "demo", can_payroll: false, can_money: false, can_approve: false, can_settings: false }, opts);
+  const owner = mk("demo-owner", "أحمد (المدير)", "صاحب المطعم", 0, { role: "owner" });
+  const ppl = [owner,
+    mk("e1", "محمد السيد", "كاشير", 6000),
+    mk("e2", "منى علي", "ويترة", 5000),
+    mk("e3", "كريم فهمي", "شيف", 8000),
+    mk("e4", "سارة محمود", "هوست", 4800),
+    mk("e5", "إسماعيل عادل", "دليفري", 0, { pay_type: "daily", daily_rate: 250 }),
+    mk("e6", "يوسف جمال", "باريستا", 5500)];
+  const emps = ppl.filter(p => p.role !== "owner");
+  const [Y, M] = S.month.split("-").map(Number), todayDay = +TODAY.slice(8);
+  const att = [];
+  for (const p of emps) {
+    const seed = p.id.charCodeAt(1);
+    for (let d = 1; d <= todayDay; d++) {
+      const iso = `${S.month}-${String(d).padStart(2, "0")}`;
+      const dow = new Date(iso + "T00:00:00").getDay();
+      if (dow === 5) { att.push({ user_id: p.id, work_date: iso, status: "off", shift: "off", check_in: null, check_out: null, late_min: 0, manual: false }); continue; }
+      if ((d + seed) % 13 === 0) { att.push({ user_id: p.id, work_date: iso, status: "absent", shift: null, check_in: null, check_out: null, late_min: 0, manual: false }); continue; }
+      const shift = d % 2 === 0 ? "M" : "E";
+      const inH = shift === "M" ? 9 : 16;
+      const late = (d + seed) % 7 === 0 ? 15 : 0;
+      const ci = new Date(Y, M - 1, d, inH, late, 0);
+      const isToday = d === todayDay;
+      const co = isToday ? null : new Date(Y, M - 1, d, inH + 9, 0, 0);
+      att.push({ user_id: p.id, work_date: iso, status: "present", shift, check_in: ci.toISOString(), check_out: co ? co.toISOString() : null, late_min: late, in_dist_m: 12, out_dist_m: co ? 15 : null, manual: false });
+    }
+  }
+  S.people = ppl; S.me = owner; S.att = att;
+  S.adv = [{ id: "a1", user_id: "e1", entry_date: `${S.month}-05`, amount: 1000, repaid: 400, note: "سلفة" }, { id: "a2", user_id: "e3", entry_date: `${S.month}-08`, amount: 2000, repaid: 0, note: "سلفة طوارئ" }];
+  S.pen = [{ id: "p1", user_id: "e2", entry_date: `${S.month}-10`, amount: 150, reason: "كسر طبق", note: "" }];
+  S.adj = [{ id: "j1", user_id: "e3", entry_date: `${S.month}-06`, amount: 500, kind: "bonus", note: "حافز أداء" }, { id: "j2", user_id: "e1", entry_date: `${S.month}-06`, amount: 300, kind: "allow", note: "بدل انتقال" }];
+  S.leave = [{ id: "l1", user_id: "e4", kind: "leave", start_date: `${S.month}-20`, end_date: `${S.month}-22`, status: "pending", reason: "ظروف عائلية" }, { id: "l2", user_id: "e2", kind: "sick", start_date: `${S.month}-12`, end_date: `${S.month}-13`, status: "approved", reason: "برد" }];
+  S.ot = [{ id: "o1", user_id: "e1", hours: 3, work_date: `${S.month}-11`, status: "pending", reason: "ضغط شغل" }, { id: "o2", user_id: "e6", hours: 2, work_date: `${S.month}-09`, status: "approved", reason: "مناسبة" }];
+  S.advReq = [{ id: "r1", user_id: "e5", amount: 1500, status: "pending", reason: "إيجار" }];
+  S.rota = emps.map(p => ({ user_id: p.id, work_date: TODAY, shift: p.id.charCodeAt(1) % 2 ? "M" : "E" }));
+  S.notes = [{ id: "n1", user_id: "e2", kind: "praise", body: "شغلها ممتاز مع العملاء", created_at: `${S.month}-07` }];
+  S.ann = [{ id: 1, body: "اجتماع الموظفين بكرة الساعة ١٢ الظهر.", author: "الإدارة", created_at: `${S.month}-14` }];
+  S.paid = []; S.closes = []; S.audit = []; S.reads = [];
+  S.settings = { id: 1, m_in: "09:00", m_out: "18:00", e_in: "16:00", e_out: "01:00", radius_m: 150, grace_min: 15, absence_deduct: true, divisor: 30, ot_rate: 35, shift_hours: 9, auto_rules_on: false, late_free: 3, late_fee: 20, absent_fee: 0, alert_late: 3, alert_absent: 3, site_lat: 30.0444, site_lng: 31.2357 };
+  S.session = { user: { id: "demo-owner" } };
+  S.demo = true; S.loading = false;
+  render();
+}
+
 /* ---------- actions ---------- */
 async function doAuth() {
   const err = m => { const e = $("#a-err"); if (e) e.textContent = m; };
@@ -1147,6 +1197,11 @@ async function doAuth() {
 document.addEventListener("click", async ev => {
   const b = ev.target.closest("[data-act]"); if (!b) return;
   const a = b.dataset.act, id = b.dataset.id;
+  if (a === "demo-go") return loadDemo();
+  if (S.demo && a === "logout") return location.reload();
+  if (S.demo && !["lang", "tab", "month", "go-now", "payslip", "copy", "xlsx", "csv"].includes(a)) {
+    return toast("👀 دي نسخة تجربة — سجّل حساب علشان تعدّل وتستخدم البرنامج فعلي.");
+  }
   if (a === "lang") { LANG = EN() ? "ar" : "en"; try { localStorage.setItem("fenjan_lang", LANG); } catch (_) {} return render(); }
   if (a === "auth-in" || a === "auth-up") { S.authMode = a === "auth-up" ? "up" : "in"; return render(); }
   if (a === "auth-go") return doAuth();
@@ -1258,7 +1313,7 @@ document.addEventListener("click", async ev => {
     navigator.serviceWorker.getRegistrations().then(rs => {
       rs.forEach(r => { if (r.active && /\/sw\.js(\?|$)/.test(r.active.scriptURL)) r.unregister(); });
     }).catch(() => {});
-    navigator.serviceWorker.register("sw-push.js?v=33").then(reg => {
+    navigator.serviceWorker.register("sw-push.js?v=34").then(reg => {
       refreshPushState();
       reg.update().catch(() => {});
       setInterval(() => reg.update().catch(() => {}), 36e5);
@@ -1271,6 +1326,7 @@ document.addEventListener("click", async ev => {
   S.session = data.session; S.loading = !!S.session; render();
   if (S.session) refresh();
   sb.auth.onAuthStateChange((evt, session) => {
+    if (S.demo) return;
     const was = S.session && S.session.user.id, now = session && session.user.id;
     S.session = session;
     if (!session) { Object.assign(S, { me: null, people: [], att: [], adv: [], pen: [], loading: false }); $("#who").textContent = "شؤون الموظفين"; render(); }
