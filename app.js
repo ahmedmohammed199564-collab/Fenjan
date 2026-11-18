@@ -799,6 +799,7 @@ function empDlg(id) {
     <div class="two"><label for="e-role">الصلاحية<select id="e-role" name="role" ${lockRole ? "disabled" : ""}>${lockRole ? `<option>${ROLES[p.role]}</option>` : roleOpts}</select></label>
     <label for="e-active">الحالة<select id="e-active" name="active"><option value="1" ${p.active ? "selected" : ""}>شغّال</option><option value="0" ${p.active ? "" : "selected"}>موقوف</option></select></label></div>
     ${permBox}
+    ${owner && p.id !== S.me.id && p.role !== "owner" ? `<button type="button" class="btn ghost" id="emp-del-btn" style="color:var(--bad);margin-top:2px">🗑️ احذف الموظف نهائيًا</button>` : ""}
     ${foot(pend ? "وافق واحفظ" : "حفظ")}`,
     (fd, err) => {
       const name = String(fd.get("full_name") || "").trim();
@@ -814,6 +815,11 @@ function empDlg(id) {
   if (rs && pb) rs.addEventListener("change", () => { pb.hidden = rs.value !== "hr"; });
   const pt = $("#e-ptype");
   if (pt) pt.addEventListener("change", () => { const d = pt.value === "daily"; const lm = $("#lbl-monthly"), ld = $("#lbl-daily"); if (lm) lm.hidden = d; if (ld) ld.hidden = !d; });
+  const delBtn = $("#emp-del-btn");
+  if (delBtn) delBtn.addEventListener("click", () => {
+    dlg.close();
+    confirmDlg("حذف الموظف", `هتمسح «${p.full_name || "الموظف"}» وكل بياناته (حضور، مرتبات، سلف، إجازات، تقييمات...) نهائيًا. مش هينفع ترجّعه.`, "احذف نهائيًا", () => q(sb.rpc("delete_employee", { p_id: id })));
+  });
 }
 function eosDlg(empId) {
   const p = person(empId);
@@ -1252,7 +1258,7 @@ document.addEventListener("click", async ev => {
     navigator.serviceWorker.getRegistrations().then(rs => {
       rs.forEach(r => { if (r.active && /\/sw\.js(\?|$)/.test(r.active.scriptURL)) r.unregister(); });
     }).catch(() => {});
-    navigator.serviceWorker.register("sw-push.js?v=32").then(reg => {
+    navigator.serviceWorker.register("sw-push.js?v=33").then(reg => {
       refreshPushState();
       reg.update().catch(() => {});
       setInterval(() => reg.update().catch(() => {}), 36e5);
