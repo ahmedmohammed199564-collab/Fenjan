@@ -402,8 +402,7 @@ function vAnnounce() {
   ${pushBtn()}
   <div class="card stack"><label for="ann-body">اكتب الإعلان<textarea id="ann-body" rows="4" placeholder="مثال: اجتماع الموظفين بكرة الساعة ١٢ الظهر."></textarea></label>
     <div class="err" id="ann-err" role="alert"></div>
-    <div><button class="btn" data-act="ann-post">ابعت لكل الموظفين</button></div>
-    <p class="note">الإعلان هيظهر لكل موظف في شاشته أول ما يفتح التطبيق.</p></div>
+    <div><button class="btn" data-act="ann-post">ابعت لكل الموظفين</button></div></div>
   ${S.ann.length ? `<h2>الإعلانات المتبعتة</h2>${annCards(true)}` : `<div class="card empty">لسه مفيش إعلانات.</div>`}`;
 }
 /* ---------- leave / requests ---------- */
@@ -1253,7 +1252,7 @@ document.addEventListener("click", async ev => {
     navigator.serviceWorker.getRegistrations().then(rs => {
       rs.forEach(r => { if (r.active && /\/sw\.js(\?|$)/.test(r.active.scriptURL)) r.unregister(); });
     }).catch(() => {});
-    navigator.serviceWorker.register("sw-push.js?v=30").then(reg => {
+    navigator.serviceWorker.register("sw-push.js?v=31").then(reg => {
       refreshPushState();
       reg.update().catch(() => {});
       setInterval(() => reg.update().catch(() => {}), 36e5);
