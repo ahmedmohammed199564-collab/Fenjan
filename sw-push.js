@@ -1,6 +1,6 @@
 // Fenjan service worker: network-first (always fetches latest when online, so the
 // installed app icon auto-updates) + push notifications.
-const V = "v36";
+const V = "v37";
 const CACHE = "fenjan-" + V;
 
 self.addEventListener("install", () => self.skipWaiting());
@@ -34,7 +34,7 @@ self.addEventListener("fetch", (e) => {
 self.addEventListener("push", (e) => {
   let d = {};
   try { d = e.data ? e.data.json() : {}; } catch (_) { d = { body: e.data ? e.data.text() : "" }; }
-  const title = d.title || "فنجان";
+  const title = d.title || "Attenda HR";
   const body = d.body || "";
   e.waitUntil(self.registration.showNotification(title, {
     body, icon: "icons/icon-192.png", badge: "icons/icon-192.png",

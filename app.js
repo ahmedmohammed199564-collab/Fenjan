@@ -341,7 +341,7 @@ function vAuth() {
   return `<div class="authwrap">
   <div class="hero">
     <span class="hlogo" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 8h1a3 3 0 0 1 0 6h-1"/><path d="M3 8h14v5a5 5 0 0 1-5 5H8a5 5 0 0 1-5-5V8Z"/><path d="M7 2.5c-.4.6-.4 1.4 0 2M11 2.5c-.4.6-.4 1.4 0 2"/><path d="M3 21h16"/></svg></span>
-    <div class="hname">فنجان</div>
+    <div class="hname">Attenda HR</div>
     <div class="htag">نظام شؤون الموظفين</div>
   </div>
   <div class="card stack auth" id="auth">
@@ -1013,7 +1013,7 @@ function printRoot(inner) {
 function payslipHTML(r) {
   const ad = S.settings.absence_deduct;
   const line = (l, v, cls = "") => `<tr><td>${l}</td><td class="pv ${cls}">${v}</td></tr>`;
-  return `<div class="pshead"><div class="pslogo">${CUP}</div><div><div class="psname">فنجان</div><div class="pssub">قسيمة راتب</div></div><div class="psmonth">${monthLabel(S.month)}</div></div>
+  return `<div class="pshead"><div class="pslogo">${CUP}</div><div><div class="psname">Attenda HR</div><div class="pssub">قسيمة راتب</div></div><div class="psmonth">${monthLabel(S.month)}</div></div>
   <div class="psmeta"><div><span>الموظف</span><b>${esc(r.p.full_name || "—")}</b></div><div><span>الوظيفة</span><b>${esc(r.p.job || "—")}</b></div><div><span>رقم التليفون</span><b class="num">${esc(r.p.phone || "—")}</b></div></div>
   <table class="pstable"><tbody>
     ${line(r.daily ? `الأجر اليومي (${money(r.rate)} × ${r.c.worked} يوم)` : "المرتب الأساسي", money(r.salary) + " ج")}
@@ -1033,7 +1033,7 @@ function payslipHTML(r) {
     ${line("إجمالي الخصومات", "− " + money(r.ded) + " ج", "neg")}
   </tbody></table>
   <div class="psnet"><span>صافي المستحق</span><b class="num">${money(r.net)} ج</b></div>
-  <p class="psfoot">الصافي = المرتب الأساسي ${ad ? "− خصم الغياب " : ""}− المتبقي من سلف الشهر − جزاءات الشهر. التأخير للعلم ولا يُخصم لوحده. الضرايب والتأمينات غير محسوبة.<br>اتطبعت في ${TODAY} · مطعم فنجان</p>`;
+  <p class="psfoot">الصافي = المرتب الأساسي ${ad ? "− خصم الغياب " : ""}− المتبقي من سلف الشهر − جزاءات الشهر. التأخير للعلم ولا يُخصم لوحده. الضرايب والتأمينات غير محسوبة.<br>اتطبعت في ${TODAY} · Attenda HR</p>`;
 }
 function payslip(empId) {
   const r = payroll().find(x => x.p.id === empId); if (!r) return toast("مفيش بيانات مرتب للموظف ده الشهر ده.");
@@ -1050,10 +1050,10 @@ function printPayroll() {
   const ad = S.settings.absence_deduct;
   const T = rows.reduce((t, r) => ({ net: t.net + r.net, salary: t.salary + r.salary }), { net: 0, salary: 0 });
   const body = rows.map(r => `<tr><td>${esc(r.p.full_name)}</td><td class="num">${r.c.worked}</td><td class="num">${r.c.absent}</td><td class="num">${money(r.c.hours)}</td><td class="num">${money(r.salary)}</td>${ad ? `<td class="num">${money(r.absDed)}</td>` : ""}<td class="num">${money(r.advBal)}</td><td class="num">${money(r.penSum)}</td><td class="num"><b>${money(r.net)}</b></td></tr>`).join("");
-  printRoot(`<div class="pshead"><div class="pslogo">${CUP}</div><div><div class="psname">فنجان</div><div class="pssub">كشف المرتبات</div></div><div class="psmonth">${monthLabel(S.month)}</div></div>
+  printRoot(`<div class="pshead"><div class="pslogo">${CUP}</div><div><div class="psname">Attenda HR</div><div class="pssub">كشف المرتبات</div></div><div class="psmonth">${monthLabel(S.month)}</div></div>
   <table class="pstable grid2"><thead><tr><th>الموظف</th><th>حضور</th><th>غياب</th><th>ساعات</th><th>المرتب</th>${ad ? "<th>خصم غياب</th>" : ""}<th>سلف</th><th>جزاءات</th><th>الصافي</th></tr></thead><tbody>${body}</tbody>
   <tfoot><tr><td>الإجمالي</td><td colspan="${ad ? 6 : 5}"></td><td></td><td class="num"><b>${money(T.net)}</b></td></tr></tfoot></table>
-  <p class="psfoot">عدد الموظفين: ${rows.length} · إجمالي الصافي: ${money(T.net)} ج · اتطبع في ${TODAY} · مطعم فنجان</p>`);
+  <p class="psfoot">عدد الموظفين: ${rows.length} · إجمالي الصافي: ${money(T.net)} ج · اتطبع في ${TODAY} · Attenda HR</p>`);
 }
 
 /* ---------- export ---------- */
@@ -1075,7 +1075,7 @@ async function exportExcel() {
   const add = (name, aoa) => X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet(aoa), name);
   const nm = id => (person(id).full_name || "");
   add("ملخص", [
-    ["مطعم فنجان — ملخص الشهر"], ["الشهر", monthLabel(S.month)], ["تاريخ التصدير", TODAY], [],
+    ["Attenda HR — ملخص الشهر"], ["الشهر", monthLabel(S.month)], ["تاريخ التصدير", TODAY], [],
     ["عدد الموظفين", rows.length], ["إجمالي أيام الحضور", T.worked], ["إجمالي أيام الغياب", T.absent],
     ["إجمالي الساعات", r2(T.hours)], ["إجمالي المرتبات الأساسية", T.salary], ["إجمالي الأوفر تايم", r2(T.ot)],
     ["إجمالي البدلات والحوافز", r2(T.allow)], ["إجمالي الخصومات", r2(T.ded)], ["صافي المرتبات", r2(T.net)],
@@ -1094,7 +1094,7 @@ async function exportExcel() {
     S.leave.map(l => [nm(l.user_id), LKIND[l.kind] || l.kind, l.start_date, l.end_date, l.status === "approved" ? "اتوافق" : l.status === "rejected" ? "اترفض" : "مستني", l.reason || ""])));
   add("الشيفتات", [["التاريخ", "الموظف", "الشيفت"]].concat(
     [...S.rota].sort((a, b) => (a.work_date + a.user_id).localeCompare(b.work_date + b.user_id)).map(r => [r.work_date, nm(r.user_id), r.shift === "off" ? "إجازة" : SHIFT[r.shift] || r.shift])));
-  X.writeFile(wb, `Fenjan_${S.month}.xlsx`);
+  X.writeFile(wb, `AttendaHR_${S.month}.xlsx`);
   toast("اتنزّل ملف Excel ✓");
 }
 function sheet() {
@@ -1183,11 +1183,11 @@ document.addEventListener("click", async ev => {
   if (a === "auth-in" || a === "auth-up") { S.authMode = a === "auth-up" ? "up" : "in"; return render(); }
   if (a === "auth-go") return doAuth();
   if (a === "push-on") return enablePush();
-  if (a === "push-local") { try { const reg = await navigator.serviceWorker.ready; await reg.showNotification("فنجان — تجربة", { body: "الإشعارات والصوت شغّالين ✅", icon: "icons/icon-192.png", badge: "icons/icon-192.png", dir: "rtl", lang: "ar", vibrate: [200, 100, 200], silent: false }); toast("لو مجاش الإشعار، راجع إعدادات الإشعارات في الموبايل."); } catch (e) { toast(say(e)); } return; }
+  if (a === "push-local") { try { const reg = await navigator.serviceWorker.ready; await reg.showNotification("Attenda HR — تجربة", { body: "الإشعارات والصوت شغّالين ✅", icon: "icons/icon-192.png", badge: "icons/icon-192.png", dir: "rtl", lang: "ar", vibrate: [200, 100, 200], silent: false }); toast("لو مجاش الإشعار، راجع إعدادات الإشعارات في الموبايل."); } catch (e) { toast(say(e)); } return; }
   if (a === "push-test") {
     toast("بيبعت تجريبي…");
     try {
-      const { data, error } = await sb.functions.invoke("send-push", { body: { body: "ده إشعار تجريبي من فنجان ✅" } });
+      const { data, error } = await sb.functions.invoke("send-push", { body: { body: "ده إشعار تجريبي من Attenda HR ✅" } });
       if (error) { toast("خطأ في الدالة: " + error.message); }
       else if (data && data.error) { toast("المشكلة: " + (data.note || data.error) + (data.detail ? " — " + data.detail : "")); }
       else { toast(`النتيجة: وصل ${data.sent || 0} من ${data.total || 0}` + (data.failed ? ` · فشل ${data.failed}` : "") + (data.sample_error ? ` — خطأ: ${data.sample_error}` : "") + (data.note ? ` — ${data.note}` : "")); }
@@ -1276,7 +1276,7 @@ document.addEventListener("click", async ev => {
     navigator.serviceWorker.getRegistrations().then(rs => {
       rs.forEach(r => { if (r.active && /\/sw\.js(\?|$)/.test(r.active.scriptURL)) r.unregister(); });
     }).catch(() => {});
-    navigator.serviceWorker.register("sw-push.js?v=36").then(reg => {
+    navigator.serviceWorker.register("sw-push.js?v=37").then(reg => {
       refreshPushState();
       reg.update().catch(() => {});
       setInterval(() => reg.update().catch(() => {}), 36e5);
