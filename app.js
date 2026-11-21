@@ -233,29 +233,79 @@ async function loadMe() {
   }
   S.me = me;
 }
+const BIG_N = 150; // فوق العدد ده الحساب بيتم في الداتابيز (scale.sql) بدل تنزيل كل الحضور
 async function loadMonth() {
   const from = S.month + "-01", to = S.month + "-" + pad(daysIn(S.month));
   const mine = !isStaff();
   const scope = x => mine ? x.eq("user_id", S.me.id) : x;
-  const [people, att, adv, pen, ann, leave, adj, rota, closes, audit, reads, ot, notes, advReq, paid] = await Promise.all([
-    isStaff() ? qall(() => sb.from("profiles").select("*").order("full_name").order("id")) : Promise.resolve([S.me]),
-    qall(() => scope(sb.from("attendance").select("*").gte("work_date", from).lte("work_date", to)).order("work_date").order("user_id")),
+  const curM = S.month === TODAY.slice(0, 7);
+  const peopleP = isStaff() ? qall(() => sb.from("profiles").select("*").order("full_name").order("id")) : Promise.resolve([S.me]);
+  const lightP = Promise.all([
     qall(() => scope(sb.from("advances").select("*").gte("entry_date", from).lte("entry_date", to)).order("entry_date", { ascending: false }).order("id")),
     qall(() => scope(sb.from("penalties").select("*").gte("entry_date", from).lte("entry_date", to)).order("entry_date", { ascending: false }).order("id")),
     q(sb.from("announcements").select("*").order("created_at", { ascending: false }).limit(50)).catch(() => []),
     q(scope(sb.from("leave_requests").select("*").order("created_at", { ascending: false }).limit(100))).catch(() => []),
     qall(() => scope(sb.from("adjustments").select("*").gte("entry_date", from).lte("entry_date", to)).order("entry_date", { ascending: false }).order("id")).catch(() => []),
-    qall(() => scope(sb.from("shift_schedule").select("*").gte("work_date", from).lte("work_date", to)).order("work_date").order("user_id")).catch(() => []),
     q(sb.from("month_close").select("*").order("month", { ascending: false }).limit(24)).catch(() => []),
     isOwner() ? q(sb.from("audit_log").select("*").order("created_at", { ascending: false }).limit(60)).catch(() => []) : Promise.resolve([]),
-    qall(() => sb.from("announcement_reads").select("announcement_id,user_id").order("announcement_id").order("user_id")).catch(() => []),
     qall(() => scope(sb.from("overtime_requests").select("*").gte("work_date", from).lte("work_date", to).order("work_date", { ascending: false }).order("id"))).catch(() => []),
     q(scope(sb.from("staff_notes").select("*").order("created_at", { ascending: false }).limit(200))).catch(() => []),
     q(scope(sb.from("advance_requests").select("*").order("created_at", { ascending: false }).limit(100))).catch(() => []),
     q(scope(sb.from("salary_payments").select("*").eq("month", S.month))).catch(() => []),
   ]);
+  lightP.catch(() => {}); // الخطأ بيتعالج عند الـ await تحت
+  const people = await peopleP;
+  let big = null;
+  if (isStaff() && people.length > BIG_N) {
+    try {
+      const [summ, att, rota, rc, mineReads] = await Promise.all([
+        q(sb.rpc("month_summary", { p_month: from, p_today: TODAY })),
+        curM ? qall(() => sb.from("attendance").select("*").eq("work_date", TODAY).order("user_id")) : Promise.resolve([]),
+        curM ? qall(() => sb.from("shift_schedule").select("*").eq("work_date", TODAY).order("user_id")).catch(() => []) : Promise.resolve([]),
+        q(sb.rpc("ann_read_counts")).catch(() => []),
+        qall(() => sb.from("announcement_reads").select("announcement_id,user_id").eq("user_id", S.me.id).order("announcement_id")).catch(() => []),
+      ]);
+      const sum = {}; (summ.users || []).forEach(u => { sum[u.u] = u; });
+      const readN = {}; (rc || []).forEach(r => { readN[String(r.announcement_id)] = +r.n; });
+      big = { sum, byDay: summ.by_day || {}, att, rota, readN, reads: mineReads || [] };
+    } catch (e) { big = null; } // الدالة مش متسجلة (scale.sql) → نرجع للطريقة العادية
+  }
+  let att, rota, reads;
+  if (big) { att = big.att; rota = big.rota; reads = big.reads; }
+  else {
+    [att, rota, reads] = await Promise.all([
+      qall(() => scope(sb.from("attendance").select("*").gte("work_date", from).lte("work_date", to)).order("work_date").order("user_id")),
+      qall(() => scope(sb.from("shift_schedule").select("*").gte("work_date", from).lte("work_date", to)).order("work_date").order("user_id")).catch(() => []),
+      qall(() => sb.from("announcement_reads").select("announcement_id,user_id").order("announcement_id").order("user_id")).catch(() => []),
+    ]);
+  }
+  const [adv, pen, ann, leave, adj, closes, audit, ot, notes, advReq, paid] = await lightP;
+  S.gen = (S.gen || 0) + 1;
+  S.big = !!big; S.sum = big ? big.sum : null; S.byDay = big ? big.byDay : null; S.readN = big ? big.readN : null;
+  S.haveAtt = new Set(); S.haveRota = new Set(); S.askAtt = new Set(); S.askRota = new Set();
   Object.assign(S, { people, att, adv, pen, ann: ann || [], leave: leave || [], adj: adj || [], rota: rota || [], closes: closes || [], audit: audit || [], reads: reads || [], ot: ot || [], notes: notes || [], advReq: advReq || [], paid: paid || [] });
 }
+// في الوضع الكبير: بنحمّل صفوف الشهر للموظفين اللي ظاهرين في الصفحة بس
+function needRows(uids, kind) {
+  if (!S.big || !uids.length) return;
+  const have = kind === "att" ? S.haveAtt : S.haveRota, ask = kind === "att" ? S.askAtt : S.askRota;
+  const miss = uids.filter(u => !have.has(u) && !ask.has(u));
+  if (!miss.length) return;
+  miss.forEach(u => ask.add(u)); // علشان ما يتطلبش مرتين
+  const gen = S.gen, month = S.month, tbl = kind === "att" ? "attendance" : "shift_schedule";
+  const from = month + "-01", to = month + "-" + pad(daysIn(month));
+  qall(() => sb.from(tbl).select("*").gte("work_date", from).lte("work_date", to).in("user_id", miss).order("work_date").order("user_id"))
+    .then(rows => {
+      if (gen !== S.gen || month !== S.month) return; // رد قديم
+      const set = new Set(miss);
+      miss.forEach(u => have.add(u));
+      if (kind === "att") S.att = S.att.filter(r => !set.has(r.user_id)).concat(rows);
+      else S.rota = S.rota.filter(r => !set.has(r.user_id)).concat(rows);
+      render();
+    })
+    .catch(e => { if (gen === S.gen) { miss.forEach(u => ask.delete(u)); toast(say(e)); } });
+}
+const rowsReady = (uid, kind) => !S.big || (kind === "att" ? S.haveAtt : S.haveRota).has(uid);
 async function refresh(silent) {
   if (S.demo) return;
   if (!S.session) return;
@@ -268,6 +318,7 @@ async function setMonth(k) { S.month = k; await refresh(); }
 
 /* ---------- calculations ---------- */
 function tally(uid) {
+  if (S.big) { const u = (S.sum || {})[uid] || {}; return { worked: +u.w || 0, M: +u.m || 0, E: +u.e || 0, off: +u.o || 0, absent: +u.a || 0, hours: +u.h || 0, lates: +u.l || 0, lateMin: +u.lm || 0 }; }
   const rows = forUser(S.att, uid);
   const c = { worked: 0, M: 0, E: 0, off: 0, absent: 0, hours: 0, lates: 0, lateMin: 0 };
   rows.forEach(r => {
@@ -305,7 +356,10 @@ const monthBar = () => `<div class="monthbar"><button class="iconbtn" data-act="
 function vDash() {
   const ws = workers(), pr = payroll();
   let present = 0, absent = 0, off = 0, hours = 0, lateCount = 0; const lateBy = {}, byDay = {};
-  S.att.forEach(r => {
+  if (S.big) {
+    Object.keys(S.sum || {}).forEach(id => { const u = S.sum[id]; present += +u.w || 0; absent += +u.a || 0; off += +u.o || 0; hours += +u.h || 0; if (u.l > 0) { lateCount += +u.l; lateBy[id] = +u.l; } });
+    Object.assign(byDay, S.byDay || {});
+  } else S.att.forEach(r => {
     if (r.status === "present") { present++; hours += rowHours(r); if (r.late_min > 0) { lateCount++; lateBy[r.user_id] = (lateBy[r.user_id] || 0) + 1; } byDay[r.work_date] = (byDay[r.work_date] || 0) + 1; }
     else if (r.status === "absent") absent++; else if (r.status === "off") off++;
   });
@@ -402,7 +456,7 @@ function annCards(canDelete) {
   const total = workers().length;
   return `<div class="stack">${S.ann.map(a => {
     const reads = (S.reads || []).filter(r => r.announcement_id === a.id);
-    const n = new Set(reads.map(r => r.user_id)).size;
+    const n = S.big ? (S.readN[String(a.id)] || 0) : new Set(reads.map(r => r.user_id)).size;
     const mine = reads.some(r => r.user_id === S.me.id);
     const foot = canDelete ? `<span class="tag">قرأها ${n} / ${total}</span>`
       : (mine ? `<span class="tag">✓ قريتها</span>` : `<button class="btn small" data-act="ann-read" data-id="${esc(a.id)}">أكّد القراءة</button>`);
@@ -541,6 +595,7 @@ function vMe() {
   const c = tally(S.me.id);
   const done = today && today.check_in && today.check_out && !open;
   const state = open ? `إنت في الشغل من ${clock(open.check_in)}` : done ? `خلصت شيفتك النهارده (${clock(today.check_in)} ← ${clock(today.check_out)})` : today && today.status === "off" ? "النهارده إجازة" : "لسه ما سجلتش دخول";
+  needRows([S.me.id], "att"); needRows([S.me.id], "rota");
   const mine = S.att.filter(r => r.user_id === S.me.id).sort((a, b) => b.work_date.localeCompare(a.work_date));
   const myAdv = S.adv.filter(a => a.user_id === S.me.id), myPen = S.pen.filter(x => x.user_id === S.me.id);
   return `<div class="row">${avatar(S.me.full_name, 46)}<h1 class="grow">أهلًا ${esc(S.me.full_name)}</h1>${monthBar()}</div>
@@ -598,7 +653,9 @@ function vMonth() {
   for (let i = 1; i <= n; i++) { const wd = new Date(y, m - 1, i).getDay(), iso = `${S.month}-${pad(i)}`; th += `<th class="${iso === TODAY ? "today" : wd === 5 ? "fri" : ""}"><small>${wdName(wd)}</small><span class="num">${i}</span></th>`; }
   th += `<th>أيام</th><th>ساعات</th>`;
   const pg = pageOf(ws, p => p.full_name + " " + (p.job || ""), "month");
+  needRows(pg.shown.map(p => p.id), "att");
   const body = pg.shown.map(p => {
+    const ok = rowsReady(p.id, "att");
     const by = {}; forUser(S.att, p.id).forEach(a => by[a.work_date] = a);
     const c = tally(p.id);
     let tds = `<td class="who">${esc(p.full_name)}</td>`;
@@ -606,7 +663,7 @@ function vMonth() {
       const iso = `${S.month}-${pad(i)}`, r = by[iso];
       const cls = !r ? "" : r.status === "off" ? "O" : r.status === "absent" ? "A" : (r.shift || "M");
       const txt = !r ? "" : r.status === "off" ? "ج" : r.status === "absent" ? "غ" : r.shift === "E" ? "م" : "ص";
-      tds += `<td><button class="d ${cls} ${r && r.late_min > 0 ? "late" : ""}" data-act="cell" data-emp="${esc(p.id)}" data-date="${iso}" aria-label="${esc(p.full_name)} يوم ${i}">${txt}</button></td>`;
+      tds += `<td><button class="d ${cls} ${r && r.late_min > 0 ? "late" : ""}"${ok ? "" : " disabled"} data-act="cell" data-emp="${esc(p.id)}" data-date="${iso}" aria-label="${esc(p.full_name)} يوم ${i}">${txt}</button></td>`;
     }
     return `<tr>${tds}<td class="num">${c.worked}</td><td class="num">${money(c.hours)}</td></tr>`;
   }).join("");
@@ -632,15 +689,18 @@ function vRota() {
   let th = `<th class="who">الموظف</th>`;
   for (let i = 1; i <= n; i++) { const wd = new Date(y, m - 1, i).getDay(), iso = `${S.month}-${pad(i)}`; th += `<th class="${iso === TODAY ? "today" : wd === 5 ? "fri" : ""}"><small>${wdName(wd)}</small><span class="num">${i}</span></th>`; }
   const pg = pageOf(ws, p => p.full_name + " " + (p.job || ""), "rota");
+  needRows(pg.shown.map(p => p.id), "rota");
   const body = pg.shown.map(p => {
+    const ok = rowsReady(p.id, "rota");
     let tds = `<td class="who">${esc(p.full_name)}</td>`;
-    for (let i = 1; i <= n; i++) { const iso = `${S.month}-${pad(i)}`, sh = map[p.id + "|" + iso]; const cls = sh === "off" ? "O" : sh || ""; const txt = sh === "off" ? (EN() ? "L" : "ج") : sh === "E" ? (EN() ? "E" : "م") : sh === "M" ? (EN() ? "M" : "ص") : ""; tds += `<td><button class="d ${cls}" data-act="rota-cell" data-emp="${esc(p.id)}" data-date="${iso}">${txt}</button></td>`; }
+    for (let i = 1; i <= n; i++) { const iso = `${S.month}-${pad(i)}`, sh = map[p.id + "|" + iso]; const cls = sh === "off" ? "O" : sh || ""; const txt = sh === "off" ? (EN() ? "L" : "ج") : sh === "E" ? (EN() ? "E" : "م") : sh === "M" ? (EN() ? "M" : "ص") : ""; tds += `<td><button class="d ${cls}"${ok ? "" : " disabled"} data-act="rota-cell" data-emp="${esc(p.id)}" data-date="${iso}">${txt}</button></td>`; }
     return `<tr>${tds}</tr>`;
   }).join("");
   return head + pg.bar + `<div class="scroll"><table class="grid"><thead><tr>${th}</tr></thead><tbody>${body}</tbody></table></div>${pg.more}
   `;
 }
 async function rotaCycle(emp, date) {
+  if (!rowsReady(emp, "rota")) return;
   const row = S.rota.find(r => r.user_id === emp && r.work_date === date), cur = row ? row.shift : undefined;
   const next = cur === undefined ? "M" : cur === "M" ? "E" : cur === "E" ? "off" : null;
   try {
@@ -1115,6 +1175,16 @@ async function exportExcel() {
   await loadXLSX();
   if (!window.XLSX) return toast("تعذّر تحميل أداة Excel — تأكد من الإنترنت.");
   const X = window.XLSX, wb = X.utils.book_new();
+  let attAll = S.att, rotaAll = S.rota;
+  if (S.big) {
+    const from = S.month + "-01", to = S.month + "-" + pad(daysIn(S.month));
+    try {
+      [attAll, rotaAll] = await Promise.all([
+        qall(() => sb.from("attendance").select("*").gte("work_date", from).lte("work_date", to).order("work_date").order("user_id")),
+        qall(() => sb.from("shift_schedule").select("*").gte("work_date", from).lte("work_date", to).order("work_date").order("user_id")).catch(() => []),
+      ]);
+    } catch (e) { return toast(say(e)); }
+  }
   const rows = payroll();
   const T = rows.reduce((t, r) => ({ net: t.net + r.net, salary: t.salary + r.salary, ded: t.ded + r.ded, ot: t.ot + r.otPay, allow: t.allow + r.allow, hours: t.hours + r.c.hours, absent: t.absent + r.c.absent, worked: t.worked + r.c.worked }), { net: 0, salary: 0, ded: 0, ot: 0, allow: 0, hours: 0, absent: 0, worked: 0 });
   const r2 = n => Math.round((+n || 0) * 100) / 100;
@@ -1129,7 +1199,7 @@ async function exportExcel() {
   add("المرتبات", sheet());
   const stLbl = s => s === "present" ? "حاضر" : s === "absent" ? "غياب" : s === "off" ? "إجازة" : (s || "");
   add("الحضور", [["التاريخ", "الموظف", "الحالة", "الشيفت", "دخول", "خروج", "تأخير (دقيقة)", "يدوي"]].concat(
-    [...S.att].sort((a, b) => (a.work_date + a.user_id).localeCompare(b.work_date + b.user_id)).map(r => [r.work_date, nm(r.user_id), stLbl(r.status), SHIFT[r.shift] || "", clock(r.check_in), clock(r.check_out), r.late_min || 0, r.manual ? "نعم" : ""])));
+    [...attAll].sort((a, b) => (a.work_date + a.user_id).localeCompare(b.work_date + b.user_id)).map(r => [r.work_date, nm(r.user_id), stLbl(r.status), SHIFT[r.shift] || "", clock(r.check_in), clock(r.check_out), r.late_min || 0, r.manual ? "نعم" : ""])));
   add("السلف", [["التاريخ", "الموظف", "المبلغ", "المسدد", "المتبقي", "ملاحظات"]].concat(
     S.adv.map(a => [a.entry_date, nm(a.user_id), +a.amount || 0, +a.repaid || 0, (+a.amount || 0) - (+a.repaid || 0), a.note || ""])));
   add("الجزاءات", [["التاريخ", "الموظف", "المبلغ", "السبب", "ملاحظات"]].concat(
@@ -1139,7 +1209,7 @@ async function exportExcel() {
   add("الإجازات", [["الموظف", "النوع", "من", "إلى", "الحالة", "السبب"]].concat(
     S.leave.map(l => [nm(l.user_id), LKIND[l.kind] || l.kind, l.start_date, l.end_date, l.status === "approved" ? "اتوافق" : l.status === "rejected" ? "اترفض" : "مستني", l.reason || ""])));
   add("الشيفتات", [["التاريخ", "الموظف", "الشيفت"]].concat(
-    [...S.rota].sort((a, b) => (a.work_date + a.user_id).localeCompare(b.work_date + b.user_id)).map(r => [r.work_date, nm(r.user_id), r.shift === "off" ? "إجازة" : SHIFT[r.shift] || r.shift])));
+    [...rotaAll].sort((a, b) => (a.work_date + a.user_id).localeCompare(b.work_date + b.user_id)).map(r => [r.work_date, nm(r.user_id), r.shift === "off" ? "إجازة" : SHIFT[r.shift] || r.shift])));
   X.writeFile(wb, `AttendaHR_${S.month}.xlsx`);
   toast("اتنزّل ملف Excel ✓");
 }
@@ -1286,7 +1356,7 @@ document.addEventListener("click", async ev => {
   if (a === "month-open") { if (!can("payroll")) return toast("مالكش صلاحية المرتبات."); return confirmDlg("فتح الشهر", `هتفتح ${monthLabel(S.month)} وترجع تعدّل فيه. اللقطة المحفوظة هتتشال.`, "افتح", () => q(sb.from("month_close").delete().eq("month", S.month))); }
   if (a === "site-dlg") return siteDlg();
   if (a === "set-site") return setSite();
-  if (a === "cell") return cellDlg(b.dataset.emp, b.dataset.date);
+  if (a === "cell") return rowsReady(b.dataset.emp, "att") ? cellDlg(b.dataset.emp, b.dataset.date) : undefined;
   if (a === "emp-edit") return empDlg(id);
   if (a === "adv-new") return moneyDlg("adv");
   if (a === "adv-edit") return moneyDlg("adv", id);
