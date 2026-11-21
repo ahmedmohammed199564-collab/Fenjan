@@ -189,6 +189,16 @@ function say(e) {
   return "حصلت مشكلة: " + (m || "غير معروفة");
 }
 async function q(promise) { const { data, error } = await promise; if (error) throw error; return data; }
+// Supabase caps one request at ~1000 rows and truncates silently, so big lists are fetched page by page.
+// `build` must return a fresh query with a stable order (so pages never overlap or skip rows).
+async function qall(build, page = 1000) {
+  const out = [];
+  for (let from = 0; ; from += page) {
+    const rows = await q(build().range(from, from + page - 1));
+    out.push(...rows);
+    if (rows.length < page) return out;
+  }
+}
 
 /* ---------- loading ---------- */
 async function loadMe() {
@@ -206,18 +216,18 @@ async function loadMonth() {
   const mine = !isStaff();
   const scope = x => mine ? x.eq("user_id", S.me.id) : x;
   const [people, att, adv, pen, ann, leave, adj, rota, closes, audit, reads, ot, notes, advReq, paid] = await Promise.all([
-    isStaff() ? q(sb.from("profiles").select("*").order("full_name")) : Promise.resolve([S.me]),
-    q(scope(sb.from("attendance").select("*").gte("work_date", from).lte("work_date", to))),
-    q(scope(sb.from("advances").select("*").gte("entry_date", from).lte("entry_date", to)).order("entry_date", { ascending: false })),
-    q(scope(sb.from("penalties").select("*").gte("entry_date", from).lte("entry_date", to)).order("entry_date", { ascending: false })),
+    isStaff() ? qall(() => sb.from("profiles").select("*").order("full_name").order("id")) : Promise.resolve([S.me]),
+    qall(() => scope(sb.from("attendance").select("*").gte("work_date", from).lte("work_date", to)).order("work_date").order("user_id")),
+    qall(() => scope(sb.from("advances").select("*").gte("entry_date", from).lte("entry_date", to)).order("entry_date", { ascending: false }).order("id")),
+    qall(() => scope(sb.from("penalties").select("*").gte("entry_date", from).lte("entry_date", to)).order("entry_date", { ascending: false }).order("id")),
     q(sb.from("announcements").select("*").order("created_at", { ascending: false }).limit(50)).catch(() => []),
     q(scope(sb.from("leave_requests").select("*").order("created_at", { ascending: false }).limit(100))).catch(() => []),
-    q(scope(sb.from("adjustments").select("*").gte("entry_date", from).lte("entry_date", to)).order("entry_date", { ascending: false })).catch(() => []),
-    q(scope(sb.from("shift_schedule").select("*").gte("work_date", from).lte("work_date", to))).catch(() => []),
+    qall(() => scope(sb.from("adjustments").select("*").gte("entry_date", from).lte("entry_date", to)).order("entry_date", { ascending: false }).order("id")).catch(() => []),
+    qall(() => scope(sb.from("shift_schedule").select("*").gte("work_date", from).lte("work_date", to)).order("work_date").order("user_id")).catch(() => []),
     q(sb.from("month_close").select("*").order("month", { ascending: false }).limit(24)).catch(() => []),
     isOwner() ? q(sb.from("audit_log").select("*").order("created_at", { ascending: false }).limit(60)).catch(() => []) : Promise.resolve([]),
-    q(sb.from("announcement_reads").select("announcement_id,user_id")).catch(() => []),
-    q(scope(sb.from("overtime_requests").select("*").gte("work_date", from).lte("work_date", to).order("work_date", { ascending: false }))).catch(() => []),
+    qall(() => sb.from("announcement_reads").select("announcement_id,user_id").order("announcement_id").order("user_id")).catch(() => []),
+    qall(() => scope(sb.from("overtime_requests").select("*").gte("work_date", from).lte("work_date", to).order("work_date", { ascending: false }).order("id"))).catch(() => []),
     q(scope(sb.from("staff_notes").select("*").order("created_at", { ascending: false }).limit(200))).catch(() => []),
     q(scope(sb.from("advance_requests").select("*").order("created_at", { ascending: false }).limit(100))).catch(() => []),
     q(scope(sb.from("salary_payments").select("*").eq("month", S.month))).catch(() => []),
@@ -1276,7 +1286,7 @@ document.addEventListener("click", async ev => {
     navigator.serviceWorker.getRegistrations().then(rs => {
       rs.forEach(r => { if (r.active && /\/sw\.js(\?|$)/.test(r.active.scriptURL)) r.unregister(); });
     }).catch(() => {});
-    navigator.serviceWorker.register("sw-push.js?v=37").then(reg => {
+    navigator.serviceWorker.register("sw-push.js?v=38").then(reg => {
       refreshPushState();
       reg.update().catch(() => {});
       setInterval(() => reg.update().catch(() => {}), 36e5);
