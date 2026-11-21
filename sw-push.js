@@ -1,6 +1,6 @@
 // Attenda HR service worker: network-first (always fetches latest when online, so the
 // installed app icon auto-updates) + push notifications.
-const V = "v41";
+const V = "v42";
 const CACHE = "attenda-" + V;
 
 self.addEventListener("install", () => self.skipWaiting());

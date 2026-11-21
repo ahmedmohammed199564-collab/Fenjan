@@ -426,7 +426,7 @@ function vAuth() {
   const up = S.authMode === "up";
   return `<div class="authwrap">
   <div class="hero">
-    <span class="hlogo" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 8h1a3 3 0 0 1 0 6h-1"/><path d="M3 8h14v5a5 5 0 0 1-5 5H8a5 5 0 0 1-5-5V8Z"/><path d="M7 2.5c-.4.6-.4 1.4 0 2M11 2.5c-.4.6-.4 1.4 0 2"/><path d="M3 21h16"/></svg></span>
+    <span class="hlogo" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M7.8 12.4l3 3 5.6-6.2"/></svg></span>
     <div class="hname">Attenda HR</div>
     <div class="htag">نظام شؤون الموظفين</div>
   </div>
@@ -1108,7 +1108,7 @@ function siteDlg() {
 }
 
 /* ---------- payslip / print ---------- */
-const CUP = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 8h1a3 3 0 0 1 0 6h-1"/><path d="M3 8h14v5a5 5 0 0 1-5 5H8a5 5 0 0 1-5-5V8Z"/><path d="M7 2.5c-.4.6-.4 1.4 0 2M11 2.5c-.4.6-.4 1.4 0 2"/><path d="M3 21h16"/></svg>`;
+const CUP = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M7.8 12.4l3 3 5.6-6.2"/></svg>`;
 function printRoot(inner) {
   let root = $("#printroot"); if (!root) { root = document.createElement("div"); root.id = "printroot"; document.body.appendChild(root); }
   root.innerHTML = `<div class="paysheet">${inner}<div class="noprint row" style="margin-top:18px;justify-content:flex-end"><button class="btn" id="pp-print">🖨️ اطبع / احفظ PDF</button><button class="btn ghost" id="pp-close">قفل</button></div></div>`;
