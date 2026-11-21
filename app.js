@@ -1,5 +1,5 @@
 "use strict";
-/* Fenjan HR — installable web app. Data lives in Supabase; access is enforced by the database rules in database.sql. */
+/* Attenda HR — installable web app. Data lives in Supabase; access is enforced by the database rules in database.sql. */
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const CFG = window.FENJAN_CONFIG || {};
@@ -1377,7 +1377,7 @@ document.addEventListener("click", async ev => {
   if (a === "csv") {
     const csv = "\ufeff" + sheet().map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\r\n");
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-    const l = document.createElement("a"); l.href = url; l.download = `fenjan-payroll-${S.month}.csv`; document.body.appendChild(l); l.click(); l.remove(); setTimeout(() => URL.revokeObjectURL(url), 2000);
+    const l = document.createElement("a"); l.href = url; l.download = `attenda-payroll-${S.month}.csv`; document.body.appendChild(l); l.click(); l.remove(); setTimeout(() => URL.revokeObjectURL(url), 2000);
   }
 });
 

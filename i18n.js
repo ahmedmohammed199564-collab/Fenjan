@@ -1,4 +1,4 @@
-/* فنجان — قاموس الترجمة للإنجليزية. يتبدّل بالاستبدال من الأطول للأقصر. */
+/* Attenda HR — قاموس الترجمة للإنجليزية. يتبدّل بالاستبدال من الأطول للأقصر. */
 window.FENJAN_I18N = {
   // ===== long sentences & notes =====
   "علشان تضيف موظف: ابعتله لينك التطبيق، يعمل حساب برقم تليفونه، وبعدين يظهر هنا وتوافق عليه": "To add an employee: send them the app link, they sign up with their phone number, then they appear here for you to approve.",

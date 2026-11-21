@@ -1,7 +1,7 @@
-// Fenjan service worker: network-first (always fetches latest when online, so the
+// Attenda HR service worker: network-first (always fetches latest when online, so the
 // installed app icon auto-updates) + push notifications.
-const V = "v40";
-const CACHE = "fenjan-" + V;
+const V = "v41";
+const CACHE = "attenda-" + V;
 
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (e) => e.waitUntil((async () => {
@@ -38,7 +38,7 @@ self.addEventListener("push", (e) => {
   const body = d.body || "";
   e.waitUntil(self.registration.showNotification(title, {
     body, icon: "icons/icon-192.png", badge: "icons/icon-192.png",
-    dir: "rtl", lang: "ar", tag: "fenjan-ann", renotify: true,
+    dir: "rtl", lang: "ar", tag: "attenda-ann", renotify: true,
     silent: false, vibrate: [200, 100, 200, 100, 200], requireInteraction: true
   }));
 });
